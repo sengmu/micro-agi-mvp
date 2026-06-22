@@ -2013,6 +2013,7 @@
             }
             loadAvatarBgSettings();
             loadChatSessions(true); // Pass true to autoSelectLast on load
+            checkSystemUpdate(); // Check for hot update on load
         });
 
         // --- Chat History Management System UI & Logic ---
@@ -2875,3 +2876,72 @@
             const blob = new Blob([currentPreviewHtml], { type: 'text/html' });
             iframe.src = URL.createObjectURL(blob);
         };
+
+        async function checkSystemUpdate() {
+            const verText = document.getElementById('system-update-ver');
+            const updateBtn = document.getElementById('system-update-btn');
+            if (!verText) return;
+            
+            try {
+                const res = await fetch('/api/system/update');
+                if (!res.ok) throw new Error("HTTP error " + res.status);
+                const data = await res.json();
+                if (data.update_available) {
+                    verText.innerHTML = `有新版本可用: ${data.local_commit} &rarr; <span style="color: var(--primary); font-weight: bold;">${data.remote_commit}</span>`;
+                    if (updateBtn) updateBtn.style.display = 'block';
+                } else {
+                    verText.textContent = `已是最新版本 (当前: ${data.local_commit || '未知'})`;
+                    if (updateBtn) updateBtn.style.display = 'none';
+                }
+            } catch (err) {
+                console.error("Failed to check system update:", err);
+                verText.textContent = "检查更新失败";
+                if (updateBtn) updateBtn.style.display = 'none';
+            }
+        }
+
+        async function triggerSystemUpdate() {
+            const verText = document.getElementById('system-update-ver');
+            const updateBtn = document.getElementById('system-update-btn');
+            
+            if (!confirm("确定要进行系统热更新吗？这将会拉取最新代码并重启服务。")) return;
+            
+            if (updateBtn) {
+                updateBtn.disabled = true;
+                updateBtn.textContent = "更新中...";
+            }
+            if (verText) {
+                verText.textContent = "正在拉取代码并重启服务，请稍候...";
+            }
+            
+            try {
+                const res = await fetch('/api/system/update', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    if (verText) verText.textContent = "更新成功！正在重新载入界面...";
+                    setTimeout(() => {
+                        location.reload();
+                    }, 3000);
+                } else {
+                    alert("更新失败: " + (data.error || "未知错误"));
+                    if (updateBtn) {
+                        updateBtn.disabled = false;
+                        updateBtn.textContent = "立即更新";
+                    }
+                    if (verText) {
+                        verText.textContent = "更新失败";
+                    }
+                }
+            } catch (err) {
+                console.error("System update error:", err);
+                alert("更新请求发送失败，请检查网络或稍后重试");
+                if (updateBtn) {
+                    updateBtn.disabled = false;
+                    updateBtn.textContent = "立即更新";
+                }
+            }
+        }
+
+        // Attach functions to window scope for immediate HTML inline onclick access
+        window.checkSystemUpdate = checkSystemUpdate;
+        window.triggerSystemUpdate = triggerSystemUpdate;

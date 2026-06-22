@@ -728,6 +728,24 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 SESSION["wake_event"] = False # Reset flag
             self._send_json({"woken": woken})
 
+        elif req_path == "/api/system/update":
+            try:
+                subprocess.run("git fetch", shell=True, capture_output=True, timeout=10)
+                local_res = subprocess.run("git rev-parse HEAD", shell=True, capture_output=True, text=True, timeout=5)
+                local_commit = local_res.stdout.strip() if local_res.returncode == 0 else ""
+                
+                remote_res = subprocess.run("git rev-parse origin/master", shell=True, capture_output=True, text=True, timeout=5)
+                remote_commit = remote_res.stdout.strip() if remote_res.returncode == 0 else ""
+                
+                update_available = (local_commit != remote_commit) and bool(local_commit) and bool(remote_commit)
+                self._send_json({
+                    "update_available": update_available,
+                    "local_commit": local_commit[:7] if local_commit else "",
+                    "remote_commit": remote_commit[:7] if remote_commit else ""
+                })
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+
         # --- WeChat API GET routes ---
         elif req_path == "/api/wechat/status":
             token = ENV_VARS.get("WXCLAW_TOKEN", "")
@@ -1149,6 +1167,24 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 SESSION["wake_event"] = True
                 self._send_json({"ok": True})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+
+        elif self.path == "/api/system/update":
+            try:
+                res = subprocess.run("git pull origin master", shell=True, capture_output=True, text=True, timeout=15)
+                if res.returncode == 0:
+                    self._send_json({"ok": True})
+                    import threading
+                    import sys
+                    import time
+                    def exit_later():
+                        time.sleep(1)
+                        print("Updating server... exiting now to trigger auto-restart wrapper script.")
+                        sys.exit(0)
+                    threading.Thread(target=exit_later).start()
+                else:
+                    self._send_json({"ok": False, "error": res.stderr})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
 
