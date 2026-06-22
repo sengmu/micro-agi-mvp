@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+micro_agi.db
+uploads/
+temp_wake.m4a
+temp_wake.wav
+wechat_status.json
+.DS_Store
+.idea/
+.vscode/
