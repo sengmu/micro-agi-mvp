@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0b0f19">
+
+    <!-- 全屏 WebView, 渲染 AI 智能体前端控制台 -->
+    <WebView
+        android:id="@+id/agi_webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="visible" />
+
+    <!-- 隐藏式终端窗口 (保持后台运作，但不占用屏幕) -->
+    <FrameLayout
+        android:id="@+id/terminal_container"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+
+</RelativeLayout>
