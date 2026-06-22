@@ -8,3 +8,5 @@ wechat_status.json
 .DS_Store
 .idea/
 .vscode/
+temp_pkg/node_modules/
+node_modules/
