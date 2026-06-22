@@ -321,6 +321,15 @@ def resume_agent_run(approved: bool, edited_command: str = "") -> dict:
                 args=(default_to, fail_msg),
                 daemon=True
             ).start()
+        elif exit_code == 0 and default_to and ENV_VARS.get("WXCLAW_PUSH_ON_SUCCESS") == "true":
+            # Limit success message output to avoid spamming too much text
+            success_summary = output_summary[:200] + "..." if len(output_summary) > 200 else output_summary
+            success_msg = f"✅【终端指令执行成功】\n\n指令: `{cmd_to_run}`\n输出结果摘要:\n```\n{success_summary}\n```"
+            threading.Thread(
+                target=run_wxclawbot_send,
+                args=(default_to, success_msg),
+                daemon=True
+            ).start()
 
         result_message = f"[Command execution result]\nExit Code: {exit_code}\nOutput:\n{output_summary}"
     else:
@@ -487,6 +496,157 @@ def run_wxclawbot_send(to_user_id, text, context_token="") -> bool:
         print(f"Failed to execute direct WeChat send: {e}")
         return False
 
+def handle_wechat_remote_control(user_msg, sender_id, context_token=""):
+    import sys
+    import pathlib
+    msg_strip = user_msg.strip()
+    cmd_parts = msg_strip.split(maxsplit=1)
+    cmd_name = cmd_parts[0].lower()
+    
+    # Check if the user is authorized (sender_id must be default_to)
+    default_to = ENV_VARS.get("WXCLAW_DEFAULT_TO", "")
+    if sender_id != default_to:
+        run_wxclawbot_send(sender_id, "🚫 您未被授权执行远程指令。请先在控制中心面板绑定此微信。", context_token)
+        return True
+
+    if cmd_name in ["/help", "/menu", "菜单", "/菜单"]:
+        help_text = (
+            "📱【Micro-AGI 远程控制菜单】\n"
+            "你可以通过微信发送以下指令控制 Termux 主程序：\n\n"
+            "🔹 `/status` - 查看手机系统状态、电量与服务状态\n"
+            "🔹 `/restart` - 重启控制中心 Web 服务\n"
+            "🔹 `/cmd <命令>` - 执行任意 Termux 终端 Shell 命令\n"
+            "🔹 `/wake` - 触发模拟语音唤醒事件\n"
+            "🔹 `/sysinfo` - 获取更详细的硬件与进程信息\n\n"
+            "💡 直接发送普通文本可以与 AGI 智能体进行对话。"
+        )
+        run_wxclawbot_send(sender_id, help_text, context_token)
+        return True
+        
+    elif cmd_name == "/status":
+        battery_info = "未知"
+        try:
+            bat_res = subprocess.run("termux-battery-status", shell=True, capture_output=True, text=True, timeout=5)
+            if bat_res.returncode == 0:
+                bat_json = json.loads(bat_res.stdout)
+                percentage = bat_json.get("percentage", 100)
+                status = bat_json.get("status", "DISCHARGING")
+                temp = bat_json.get("temperature", 0.0)
+                status_zh = "充电中" if "CHARGING" in status else "放电中"
+                battery_info = f"{percentage}% ({status_zh}), 温度 {temp}°C"
+        except Exception:
+            battery_info = "无法获取 (可能未安装 termux-api)"
+
+        mem_info = "未知"
+        try:
+            mem_res = subprocess.run("free -m", shell=True, capture_output=True, text=True, timeout=5)
+            if mem_res.returncode == 0:
+                lines = mem_res.stdout.split('\n')
+                if len(lines) > 1:
+                    parts = lines[1].split()
+                    if len(parts) > 3:
+                        total_mem = parts[1]
+                        used_mem = parts[2]
+                        mem_info = f"已用 {used_mem}MB / 共 {total_mem}MB"
+        except Exception:
+            pass
+
+        tmux_sessions = "无活跃会话"
+        try:
+            tmux_res = subprocess.run("tmux ls", shell=True, capture_output=True, text=True, timeout=5)
+            if tmux_res.returncode == 0:
+                tmux_sessions = "\n" + tmux_res.stdout.strip()
+        except Exception:
+            pass
+
+        status_text = (
+            "📊【Micro-AGI 当前状态】\n\n"
+            f"🔋 设备电量: {battery_info}\n"
+            f"🧠 内存状态: {mem_info}\n"
+            f"🔗 微信绑定 ID: {sender_id}\n"
+            f"⚙️ 活跃 tmux 会话: {tmux_sessions}\n\n"
+            "🟢 服务正在稳定运行中..."
+        )
+        run_wxclawbot_send(sender_id, status_text, context_token)
+        return True
+        
+    elif cmd_name == "/restart":
+        run_wxclawbot_send(sender_id, "⏳ 收到远程指令：正在拉取最新代码并重启服务器...", context_token)
+        subprocess.run("git pull origin master", shell=True, capture_output=True, timeout=15)
+        import threading
+        import sys
+        import time
+        def exit_later():
+            time.sleep(1)
+            sys.exit(0)
+        threading.Thread(target=exit_later).start()
+        return True
+        
+    elif cmd_name == "/wake":
+        SESSION["wake_event"] = True
+        run_wxclawbot_send(sender_id, "🎙️ 成功远程触发模拟语音唤醒事件！设备端将进入聆听状态。", context_token)
+        return True
+        
+    elif cmd_name == "/sysinfo":
+        uptime_str = "未知"
+        try:
+            uptime_res = subprocess.run("uptime", shell=True, capture_output=True, text=True, timeout=5)
+            if uptime_res.returncode == 0:
+                uptime_str = uptime_res.stdout.strip()
+        except Exception:
+            pass
+            
+        sysinfo_text = (
+            "⚙️【Micro-AGI 硬件/系统信息】\n\n"
+            f"⏱️ 系统运行时间: {uptime_str}\n"
+            f"📁 运行目录: `/data/data/com.termux/files/home/micro-agi-mvp`\n"
+            f"🐍 Python 版本: {sys.version.split()[0]}\n"
+        )
+        run_wxclawbot_send(sender_id, sysinfo_text, context_token)
+        return True
+
+    elif cmd_name == "/cmd":
+        if len(cmd_parts) < 2:
+            run_wxclawbot_send(sender_id, "⚠️ 请提供要执行的 Shell 命令。用法: `/cmd <命令>`", context_token)
+            return True
+            
+        shell_cmd = cmd_parts[1]
+        run_wxclawbot_send(sender_id, f"💻 正在执行命令: `{shell_cmd}` ...", context_token)
+        
+        try:
+            res = subprocess.run(
+                shell_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=str(pathlib.Path.home())
+            )
+            out = res.stdout
+            err = res.stderr
+            code = res.returncode
+            
+            output_sum = out + err
+            if not output_sum.strip():
+                output_sum = "[无输出内容]"
+            
+            if len(output_sum) > 800:
+                output_sum = output_sum[:800] + "\n...(输出过长，已截断)"
+                
+            reply_msg = (
+                f"💻【执行结果 (退出码: {code})】\n"
+                f"```\n{output_sum}\n```"
+            )
+            run_wxclawbot_send(sender_id, reply_msg, context_token)
+        except subprocess.TimeoutExpired:
+            run_wxclawbot_send(sender_id, "❌ 执行超时 (超过 15 秒)。", context_token)
+        except Exception as e:
+            run_wxclawbot_send(sender_id, f"❌ 执行异常: {str(e)}", context_token)
+            
+        return True
+        
+    return False
+
 def handle_async_wechat_msg(user_msg, sender_id, sender_name, to_user_name, context_token=""):
     # Automatically bind this sender as default user if not already bound
     if sender_id and not ENV_VARS.get("WXCLAW_DEFAULT_TO"):
@@ -494,6 +654,13 @@ def handle_async_wechat_msg(user_msg, sender_id, sender_name, to_user_name, cont
         save_env_config({
             "WXCLAW_DEFAULT_TO": sender_id
         })
+
+    # WeChat Remote Command Interception
+    msg_strip = user_msg.strip()
+    is_cmd = msg_strip.startswith("/") or msg_strip == "菜单"
+    if is_cmd:
+        if handle_wechat_remote_control(user_msg, sender_id, context_token):
+            return
 
     # Cross-session Web UI command approval check
     default_to = ENV_VARS.get("WXCLAW_DEFAULT_TO", "")
@@ -762,7 +929,9 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     "token": token,
                     "push_rules": push_rules,
                     "push_approval": ENV_VARS.get("WXCLAW_PUSH_ON_APPROVAL", "false"),
-                    "push_error": ENV_VARS.get("WXCLAW_PUSH_ON_ERROR", "false")
+                    "push_error": ENV_VARS.get("WXCLAW_PUSH_ON_ERROR", "false"),
+                    "push_success": ENV_VARS.get("WXCLAW_PUSH_ON_SUCCESS", "false"),
+                    "push_battery": ENV_VARS.get("WXCLAW_PUSH_ON_BATTERY", "false")
                 })
             else:
                 self._send_json({
@@ -1112,6 +1281,10 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     update_dict["WXCLAW_PUSH_ON_APPROVAL"] = "true" if req_json.get("push_approval") else "false"
                 if "push_error" in req_json:
                     update_dict["WXCLAW_PUSH_ON_ERROR"] = "true" if req_json.get("push_error") else "false"
+                if "push_success" in req_json:
+                    update_dict["WXCLAW_PUSH_ON_SUCCESS"] = "true" if req_json.get("push_success") else "false"
+                if "push_battery" in req_json:
+                    update_dict["WXCLAW_PUSH_ON_BATTERY"] = "true" if req_json.get("push_battery") else "false"
                 
                 success = save_env_config(update_dict)
                 
@@ -1266,6 +1439,37 @@ def wechat_long_poll_daemon():
 
 # Start the polling daemon
 threading.Thread(target=wechat_long_poll_daemon, daemon=True).start()
+
+def battery_monitor_daemon():
+    import time
+    last_notified_time = 0
+    
+    while True:
+        try:
+            default_to = ENV_VARS.get("WXCLAW_DEFAULT_TO", "")
+            is_battery_push_enabled = ENV_VARS.get("WXCLAW_PUSH_ON_BATTERY", "false") == "true"
+            
+            if default_to and is_battery_push_enabled:
+                current_time = time.time()
+                # Run at most once every 2 hours (7200 seconds) to avoid spamming
+                if current_time - last_notified_time > 7200:
+                    res = subprocess.run("termux-battery-status", shell=True, capture_output=True, text=True, timeout=5)
+                    if res.returncode == 0:
+                        bat_json = json.loads(res.stdout)
+                        percentage = bat_json.get("percentage", 100)
+                        status = bat_json.get("status", "DISCHARGING")
+                        
+                        if percentage <= 20 and "CHARGING" not in status:
+                            warn_msg = f"🔋【系统低电量警报】\n\n当前手机设备电量仅为 {percentage}%，且处于未充电状态。为了避免智能体服务中断，请及时为手机充电！"
+                            run_wxclawbot_send(default_to, warn_msg)
+                            last_notified_time = current_time
+        except Exception as e:
+            print(f"Error in battery monitor daemon: {e}")
+            
+        time.sleep(300) # Check every 5 minutes
+
+# Start the battery monitor daemon
+threading.Thread(target=battery_monitor_daemon, daemon=True).start()
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True

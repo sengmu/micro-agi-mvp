@@ -937,6 +937,10 @@
                     if (approvalChk) approvalChk.checked = (data.push_approval === "true");
                     const errorChk = document.getElementById("wechat-push-error");
                     if (errorChk) errorChk.checked = (data.push_error === "true");
+                    const successChk = document.getElementById("wechat-push-success");
+                    if (successChk) successChk.checked = (data.push_success === "true");
+                    const batteryChk = document.getElementById("wechat-push-battery");
+                    if (batteryChk) batteryChk.checked = (data.push_battery === "true");
                     
                     clearBtn.style.display = "flex";
                     qrBtn.disabled = false;
@@ -990,6 +994,8 @@
             const rulesInput = document.getElementById("wechat-push-rules-input");
             const approvalChk = document.getElementById("wechat-push-approval");
             const errorChk = document.getElementById("wechat-push-error");
+            const successChk = document.getElementById("wechat-push-success");
+            const batteryChk = document.getElementById("wechat-push-battery");
             const saveBtn = document.getElementById("wechat-push-save-btn");
             
             saveBtn.disabled = true;
@@ -1002,7 +1008,9 @@
                     body: JSON.stringify({ 
                         push_rules: rulesInput.value,
                         push_approval: approvalChk ? approvalChk.checked : false,
-                        push_error: errorChk ? errorChk.checked : false
+                        push_error: errorChk ? errorChk.checked : false,
+                        push_success: successChk ? successChk.checked : false,
+                        push_battery: batteryChk ? batteryChk.checked : false
                     })
                 });
                 const data = await response.json();
