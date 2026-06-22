@@ -883,17 +883,19 @@
                                 <div style="width: 10px; height: 10px; border-radius: 50%; background: #27c93f; box-shadow: inset 0 0 2px rgba(0,0,0,0.5);"></div>
                             </div>
                             <div style="font-size: 0.75rem; color: var(--term-text); font-family: 'Consolas', 'Monaco', monospace; flex-grow: 1; text-align: center; letter-spacing: 0.5px;">TERMINAL EXECUTION</div>
-                            <div style="font-size: 0.7rem; color: ${statusColor}; font-weight: 700; letter-spacing: 0.5px;">${statusText}</div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 0.7rem; color: ${statusColor}; font-weight: 700; letter-spacing: 0.5px;">${statusText}</span>
+                                <button class="term-copy-btn" onclick="event.stopPropagation(); copyTerminalOutput(this, '${stepId}')" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; color: var(--term-text); font-size: 0.62rem; cursor: pointer; font-weight: bold; transition: all 0.2s;">
+                                    复制结果
+                                </button>
+                            </div>
                         </div>
                         <div class="step-details" id="${stepId}" style="display:block;">
                             <div style="padding: 12px;">
                                 <div style="color: var(--term-cmd-text); font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; margin-bottom: 10px; word-break: break-all; font-weight: 600; text-shadow: var(--term-glow);">
                                     <span style="color: #4a5568; margin-right: 6px; user-select: none;">$</span>${escapeHtml(step.command)}
                                 </div>
-                                <div style="background: var(--code-block-bg); border-radius: 6px; border: 1px solid var(--term-border); border-left: 2px solid ${statusColor}; max-height: 250px; overflow-y: auto; overflow-x: auto; position: relative;">
-                                    <button class="term-copy-btn" onclick="copyTerminalOutput(this)" style="position: absolute; top: 6px; right: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; color: var(--term-text); font-size: 0.6rem; cursor: pointer; opacity: 0.7; transition: opacity 0.2s;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.7">
-                                        复制
-                                    </button>
+                                <div style="background: var(--code-block-bg); border-radius: 6px; border: 1px solid var(--term-border); border-left: 2px solid ${statusColor}; max-height: 250px; overflow-y: auto; overflow-x: auto;">
                                     <pre class="term-output-text" style="margin: 0; padding: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.75rem; color: var(--term-text); white-space: pre-wrap; word-wrap: break-word; line-height: 1.4;">${formatTerminalOutput(step.output)}</pre>
                                 </div>
                             </div>
@@ -3002,9 +3004,9 @@
             });
         };
 
-        window.copyTerminalOutput = function(btn) {
-            const container = btn.closest('.step-details');
-            const preEl = container.querySelector('.term-output-text');
+        window.copyTerminalOutput = function(btn, stepId) {
+            const detailEl = document.getElementById(stepId);
+            const preEl = detailEl ? detailEl.querySelector('.term-output-text') : null;
             const textToCopy = preEl ? preEl.textContent : "";
             
             navigator.clipboard.writeText(textToCopy).then(() => {
