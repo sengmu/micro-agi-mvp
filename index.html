@@ -620,6 +620,22 @@
                         </div>
                     </div>
 
+                    <!-- Terminal Theme Settings -->
+                    <div style="margin-top: 10px; margin-bottom: 10px;">
+                        <div style="font-size: 0.75rem; font-weight: bold; color: white; margin-bottom: 8px;">终端与代码卡片主题</div>
+                        <div class="terminal-theme-chips" style="display: flex; gap: 6px; flex-wrap: wrap; background: rgba(255,255,255,0.02); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.03);">
+                            <button class="term-theme-chip active" id="term-theme-btn-dark" onclick="setTerminalTheme('dark')">
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background: #a0aec0;"></span> 经典暗黑
+                            </button>
+                            <button class="term-theme-chip" id="term-theme-btn-hacker" onclick="setTerminalTheme('hacker')">
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e;"></span> 复古极客绿
+                            </button>
+                            <button class="term-theme-chip" id="term-theme-btn-cyberpunk" onclick="setTerminalTheme('cyberpunk')">
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background: #ec4899;"></span> 赛博霓虹
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Layout & Voice switches -->
                     <div>
                         <div style="font-size: 0.75rem; font-weight: bold; color: white; margin-bottom: 8px;">视图与交互开关</div>

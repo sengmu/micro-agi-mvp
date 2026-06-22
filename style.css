@@ -2432,3 +2432,68 @@
     text-overflow: ellipsis;
 }
 
+/* --- Terminal & Code Custom Themes --- */
+/* Default (Dark) */
+body, body[data-terminal-theme="dark"] {
+    --term-bg: rgba(20, 20, 20, 0.85);
+    --term-header-bg: rgba(40, 40, 40, 0.9);
+    --term-border: rgba(255, 255, 255, 0.08);
+    --term-text: #cbd5e0;
+    --term-cmd-text: #63b3ed;
+    --term-glow: none;
+    --code-block-bg: rgba(0,0,0,0.4);
+}
+
+/* Hacker Green */
+body[data-terminal-theme="hacker"] {
+    --term-bg: rgba(0, 12, 0, 0.96);
+    --term-header-bg: rgba(0, 24, 0, 0.95);
+    --term-border: rgba(34, 197, 94, 0.35);
+    --term-text: #4ade80;
+    --term-cmd-text: #22c55e;
+    --term-glow: 0 0 10px rgba(34, 197, 94, 0.2);
+    --code-block-bg: rgba(0,6,0,0.6);
+}
+
+/* Cyberpunk Neon */
+body[data-terminal-theme="cyberpunk"] {
+    --term-bg: rgba(18, 10, 36, 0.96);
+    --term-header-bg: rgba(30, 15, 60, 0.9);
+    --term-border: rgba(236, 72, 153, 0.45);
+    --term-text: #f472b6;
+    --term-cmd-text: #22d3ee;
+    --term-glow: 0 0 12px rgba(236, 72, 153, 0.25);
+    --code-block-bg: rgba(10, 5, 22, 0.55);
+}
+
+.term-theme-chip {
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(0,0,0,0.2);
+    color: #cbd5e0;
+    font-size: 0.68rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.term-theme-chip.active {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+#term-theme-btn-hacker.active {
+    background: rgba(34, 197, 94, 0.15) !important;
+    border-color: rgba(34, 197, 94, 0.5) !important;
+    color: #4ade80 !important;
+}
+
+#term-theme-btn-cyberpunk.active {
+    background: rgba(236, 72, 153, 0.15) !important;
+    border-color: rgba(236, 72, 153, 0.5) !important;
+    color: #f472b6 !important;
+}
+

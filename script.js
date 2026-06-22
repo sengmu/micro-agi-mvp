@@ -826,8 +826,20 @@
         function appendAssistantMessage(response, steps, nodeId = null) {
             // Simple markdown parsing for text
             let parsedContent = (response || "").replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
-                let encodedCode = encodeURIComponent(code).replace(/'/g, "%27");
-                let html = `<pre style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; overflow-x: auto; margin: 8px 0; border: 1px solid rgba(255,255,255,0.05); font-family: monospace; font-size: 0.8rem; color: #e2e8f0; max-width: 100%; box-sizing: border-box;"><code>${escapeHtml(code)}</code></pre>`;
+                const encodedCode = encodeURIComponent(code).replace(/'/g, "%27");
+                const escapedCode = escapeHtml(code);
+                let html = `
+                    <div class="code-block-container" style="margin: 12px 0; border-radius: 8px; border: 1px solid var(--term-border); overflow: hidden; background: var(--term-bg); box-shadow: var(--term-glow);">
+                        <div class="code-block-header" style="background: var(--term-header-bg); padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--term-border); user-select: none;">
+                            <span class="code-block-lang" style="font-size: 0.65rem; color: var(--term-text); font-weight: bold; text-transform: uppercase;">${lang || 'text'}</span>
+                            <button class="code-block-copy-btn" onclick="copyCodeBlock(this)" style="background: none; border: none; color: var(--term-cmd-text); font-size: 0.65rem; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.2s; display: flex; align-items: center; gap: 4px;">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                复制
+                            </button>
+                        </div>
+                        <pre class="code-pre" style="margin: 0; padding: 10px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.78rem; color: var(--term-text); line-height: 1.4; max-width: 100%; box-sizing: border-box; background: var(--code-block-bg);"><code>${escapedCode}</code></pre>
+                    </div>
+                `;
                 if (lang.toLowerCase() === 'html' || lang.toLowerCase() === 'htm') {
                     html += `<div style="margin-bottom: 8px;"><button class="tool-btn" style="font-size: 0.75rem; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;" onclick="openLivePreview(decodeURIComponent('${encodedCode}'))">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
@@ -838,7 +850,19 @@
             });
             // Fallback for ``` without lang
             parsedContent = parsedContent.replace(/```([\s\S]*?)```/g, function(match, code) {
-                return `<pre style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; overflow-x: auto; margin: 8px 0; border: 1px solid rgba(255,255,255,0.05); font-family: monospace; font-size: 0.8rem; color: #e2e8f0; max-width: 100%; box-sizing: border-box;"><code>${escapeHtml(code)}</code></pre>`;
+                const escapedCode = escapeHtml(code);
+                return `
+                    <div class="code-block-container" style="margin: 12px 0; border-radius: 8px; border: 1px solid var(--term-border); overflow: hidden; background: var(--term-bg); box-shadow: var(--term-glow);">
+                        <div class="code-block-header" style="background: var(--term-header-bg); padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--term-border); user-select: none;">
+                            <span class="code-block-lang" style="font-size: 0.65rem; color: var(--term-text); font-weight: bold; text-transform: uppercase;">text</span>
+                            <button class="code-block-copy-btn" onclick="copyCodeBlock(this)" style="background: none; border: none; color: var(--term-cmd-text); font-size: 0.65rem; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.2s; display: flex; align-items: center; gap: 4px;">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                复制
+                            </button>
+                        </div>
+                        <pre class="code-pre" style="margin: 0; padding: 10px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.78rem; color: var(--term-text); line-height: 1.4; max-width: 100%; box-sizing: border-box; background: var(--code-block-bg);"><code>${escapedCode}</code></pre>
+                    </div>
+                `;
             });
             parsedContent = parsedContent.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 4px; color: #fbd38d;">$1</code>');
             parsedContent = parsedContent.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -851,23 +875,26 @@
                 const statusText = isSuccess ? '✅ SUCCESS' : '❌ FAILED';
                 
                 return `
-                    <div class="terminal-card" style="background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.08); overflow: hidden; margin: 12px 0 4px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.4);">
-                        <div class="terminal-header" onclick="toggleStepDetails('${stepId}')" style="background: rgba(40, 40, 40, 0.9); padding: 8px 12px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s;">
+                    <div class="terminal-card" style="background: var(--term-bg); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 10px; border: 1px solid var(--term-border); overflow: hidden; margin: 12px 0 4px 0; box-shadow: var(--term-glow), 0 4px 16px rgba(0,0,0,0.4);">
+                        <div class="terminal-header" onclick="toggleStepDetails('${stepId}')" style="background: var(--term-header-bg); padding: 8px 12px; display: flex; align-items: center; cursor: pointer; border-bottom: 1px solid var(--term-border); transition: background 0.2s;">
                             <div style="display: flex; gap: 6px; margin-right: 12px;">
                                 <div style="width: 10px; height: 10px; border-radius: 50%; background: #ff5f56; box-shadow: inset 0 0 2px rgba(0,0,0,0.5);"></div>
                                 <div style="width: 10px; height: 10px; border-radius: 50%; background: #ffbd2e; box-shadow: inset 0 0 2px rgba(0,0,0,0.5);"></div>
                                 <div style="width: 10px; height: 10px; border-radius: 50%; background: #27c93f; box-shadow: inset 0 0 2px rgba(0,0,0,0.5);"></div>
                             </div>
-                            <div style="font-size: 0.75rem; color: #a0aec0; font-family: 'Consolas', 'Monaco', monospace; flex-grow: 1; text-align: center; letter-spacing: 0.5px;">TERMINAL EXECUTION</div>
+                            <div style="font-size: 0.75rem; color: var(--term-text); font-family: 'Consolas', 'Monaco', monospace; flex-grow: 1; text-align: center; letter-spacing: 0.5px;">TERMINAL EXECUTION</div>
                             <div style="font-size: 0.7rem; color: ${statusColor}; font-weight: 700; letter-spacing: 0.5px;">${statusText}</div>
                         </div>
                         <div class="step-details" id="${stepId}" style="display:block;">
                             <div style="padding: 12px;">
-                                <div style="color: #63b3ed; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; margin-bottom: 10px; word-break: break-all; font-weight: 600; text-shadow: 0 0 8px rgba(99, 179, 237, 0.3);">
+                                <div style="color: var(--term-cmd-text); font-family: 'Consolas', 'Monaco', monospace; font-size: 0.85rem; margin-bottom: 10px; word-break: break-all; font-weight: 600; text-shadow: var(--term-glow);">
                                     <span style="color: #4a5568; margin-right: 6px; user-select: none;">$</span>${escapeHtml(step.command)}
                                 </div>
-                                <div style="background: rgba(0,0,0,0.4); border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); border-left: 2px solid ${statusColor}; max-height: 250px; overflow-y: auto; overflow-x: auto;">
-                                    <pre style="margin: 0; padding: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.75rem; color: #cbd5e0; white-space: pre-wrap; word-wrap: break-word; line-height: 1.4;">${formatTerminalOutput(step.output)}</pre>
+                                <div style="background: var(--code-block-bg); border-radius: 6px; border: 1px solid var(--term-border); border-left: 2px solid ${statusColor}; max-height: 250px; overflow-y: auto; overflow-x: auto; position: relative;">
+                                    <button class="term-copy-btn" onclick="copyTerminalOutput(this)" style="position: absolute; top: 6px; right: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; color: var(--term-text); font-size: 0.6rem; cursor: pointer; opacity: 0.7; transition: opacity 0.2s;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.7">
+                                        复制
+                                    </button>
+                                    <pre class="term-output-text" style="margin: 0; padding: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.75rem; color: var(--term-text); white-space: pre-wrap; word-wrap: break-word; line-height: 1.4;">${formatTerminalOutput(step.output)}</pre>
                                 </div>
                             </div>
                         </div>
@@ -2019,6 +2046,11 @@
             if (savedTheme && themes[savedTheme]) {
                 setTheme(savedTheme);
             }
+
+            // Restore Terminal & Code Theme
+            const savedTermTheme = localStorage.getItem('micro-agi-term-theme') || 'dark';
+            setTerminalTheme(savedTermTheme);
+
             loadAvatarBgSettings();
             loadChatSessions(true); // Pass true to autoSelectLast on load
             checkSystemUpdate(); // Check for hot update on load
@@ -2953,3 +2985,46 @@
         // Attach functions to window scope for immediate HTML inline onclick access
         window.checkSystemUpdate = checkSystemUpdate;
         window.triggerSystemUpdate = triggerSystemUpdate;
+
+        window.copyCodeBlock = function(btn) {
+            const container = btn.closest('.code-block-container');
+            const codeEl = container.querySelector('code');
+            const textToCopy = codeEl ? codeEl.textContent : "";
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const oldHTML = btn.innerHTML;
+                btn.textContent = "已复制 ✅";
+                setTimeout(() => { btn.innerHTML = oldHTML; }, 2000);
+            }).catch(err => {
+                alert("复制失败，请手动选择复制。");
+            });
+        };
+
+        window.copyTerminalOutput = function(btn) {
+            const container = btn.closest('.step-details');
+            const preEl = container.querySelector('.term-output-text');
+            const textToCopy = preEl ? preEl.textContent : "";
+            
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                const oldText = btn.textContent;
+                btn.textContent = "已复制 ✅";
+                setTimeout(() => { btn.textContent = oldText; }, 2000);
+            }).catch(err => {
+                alert("复制失败，请手动选择复制。");
+            });
+        };
+
+        window.setTerminalTheme = function(themeName) {
+            document.body.setAttribute('data-terminal-theme', themeName);
+            
+            document.querySelectorAll('.term-theme-chip').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            const activeBtn = document.getElementById(`term-theme-btn-${themeName}`);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+            }
+            
+            localStorage.setItem('micro-agi-term-theme', themeName);
+        };
