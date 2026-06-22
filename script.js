@@ -1087,6 +1087,7 @@
                 const container = document.querySelector(".main-container");
                 chatChk.checked = container ? container.classList.contains("chat-collapsed") : false;
             }
+            checkTunnelStatus(); // Fetch tunnel status on open
             
             startWeChatPolling();
         }
@@ -2054,6 +2055,7 @@
             loadAvatarBgSettings();
             loadChatSessions(true); // Pass true to autoSelectLast on load
             checkSystemUpdate(); // Check for hot update on load
+            checkTunnelStatus(); // Check network tunnel status
         });
 
         // --- Chat History Management System UI & Logic ---
@@ -3028,3 +3030,90 @@
             
             localStorage.setItem('micro-agi-term-theme', themeName);
         };
+
+        let tunnelPollInterval = null;
+
+        async function checkTunnelStatus() {
+            try {
+                const response = await fetch("/api/system/tunnel");
+                const data = await response.json();
+                
+                const checkbox = document.getElementById("settings-tunnel-checkbox");
+                const statusText = document.getElementById("settings-tunnel-status");
+                
+                if (!checkbox || !statusText) return;
+                
+                if (data.status === "active") {
+                    checkbox.checked = true;
+                    statusText.innerHTML = `✅ 已开启: <a href="${data.url}" target="_blank" style="color: var(--primary); font-weight: bold; text-decoration: underline;">${data.url}</a>`;
+                    
+                    if (tunnelPollInterval) {
+                        clearInterval(tunnelPollInterval);
+                        tunnelPollInterval = setInterval(checkTunnelStatus, 8000);
+                    }
+                } else if (data.status === "starting") {
+                    checkbox.checked = true;
+                    statusText.textContent = "⏳ 正在建立穿透通道，请稍候...";
+                    
+                    if (!tunnelPollInterval) {
+                        tunnelPollInterval = setInterval(checkTunnelStatus, 2000);
+                    }
+                } else if (data.status === "failed") {
+                    checkbox.checked = false;
+                    statusText.textContent = "❌ 连接失败，请重试";
+                    if (tunnelPollInterval) {
+                        clearInterval(tunnelPollInterval);
+                        tunnelPollInterval = null;
+                    }
+                } else {
+                    checkbox.checked = false;
+                    statusText.textContent = "已关闭";
+                    if (tunnelPollInterval) {
+                        clearInterval(tunnelPollInterval);
+                        tunnelPollInterval = null;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to check tunnel status:", err);
+            }
+        }
+
+        async function toggleTunnelConnection() {
+            const checkbox = document.getElementById("settings-tunnel-checkbox");
+            const statusText = document.getElementById("settings-tunnel-status");
+            const active = checkbox.checked;
+            
+            if (active) {
+                statusText.textContent = "⏳ 正在请求分配域名...";
+            } else {
+                statusText.textContent = "⏳ 正在断开连接...";
+            }
+            
+            try {
+                const response = await fetch("/api/system/tunnel", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ active: active })
+                });
+                
+                setTimeout(checkTunnelStatus, 1000);
+                
+                if (active) {
+                    if (tunnelPollInterval) clearInterval(tunnelPollInterval);
+                    tunnelPollInterval = setInterval(checkTunnelStatus, 2000);
+                } else {
+                    if (tunnelPollInterval) {
+                        clearInterval(tunnelPollInterval);
+                        tunnelPollInterval = null;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to toggle tunnel:", err);
+                alert("操作请求发送失败");
+                checkbox.checked = !active;
+                checkTunnelStatus();
+            }
+        }
+
+        window.checkTunnelStatus = checkTunnelStatus;
+        window.toggleTunnelConnection = toggleTunnelConnection;

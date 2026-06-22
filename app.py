@@ -730,6 +730,75 @@ def handle_async_wechat_msg(user_msg, sender_id, sender_name, to_user_name, cont
     run_wxclawbot_send(sender_id, reply, context_token)
 # ===============================================
 
+# --- Network Intranet Tunnel (localhost.run) ---
+TUNNEL_PROCESS = None
+TUNNEL_URL = ""
+TUNNEL_STATUS = "inactive" # "inactive", "starting", "active", "failed"
+
+def start_ssh_tunnel():
+    global TUNNEL_PROCESS, TUNNEL_URL, TUNNEL_STATUS
+    if TUNNEL_PROCESS is not None:
+        return
+    
+    TUNNEL_STATUS = "starting"
+    TUNNEL_URL = ""
+    
+    def run_tunnel():
+        global TUNNEL_PROCESS, TUNNEL_URL, TUNNEL_STATUS
+        try:
+            import os
+            import signal
+            cmd = "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -R 80:localhost:8085 nokey@localhost.run"
+            TUNNEL_PROCESS = subprocess.Popen(
+                cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                preexec_fn=os.setsid
+            )
+            
+            # Read stdout line-by-line
+            for line in iter(TUNNEL_PROCESS.stdout.readline, ''):
+                print(f"[Tunnel SSH] {line.strip()}")
+                # Match URL e.g. "https://xxxx.lhr.life"
+                match = re.search(r"https://[a-zA-Z0-9.-]+\.lhr\.life", line)
+                if match:
+                    TUNNEL_URL = match.group(0)
+                    TUNNEL_STATUS = "active"
+                    print(f"[Tunnel SSH] Tunnel established successfully! Public URL: {TUNNEL_URL}")
+            
+            TUNNEL_PROCESS.wait()
+        except Exception as e:
+            print(f"[Tunnel SSH] Exception in tunnel thread: {e}")
+            TUNNEL_STATUS = "failed"
+        finally:
+            TUNNEL_PROCESS = None
+            if TUNNEL_STATUS != "failed":
+                TUNNEL_STATUS = "inactive"
+            TUNNEL_URL = ""
+            print("[Tunnel SSH] Tunnel process stopped.")
+
+    threading.Thread(target=run_tunnel, daemon=True).start()
+
+def stop_ssh_tunnel():
+    global TUNNEL_PROCESS, TUNNEL_STATUS, TUNNEL_URL
+    if TUNNEL_PROCESS is not None:
+        print("[Tunnel SSH] Terminating tunnel process...")
+        try:
+            import os
+            import signal
+            os.killpg(os.getpgid(TUNNEL_PROCESS.pid), signal.SIGTERM)
+        except Exception as e:
+            print(f"[Tunnel SSH] Failed to kill process group: {e}")
+            try:
+                TUNNEL_PROCESS.terminate()
+            except Exception:
+                pass
+        TUNNEL_PROCESS = None
+    TUNNEL_STATUS = "inactive"
+    TUNNEL_URL = ""
 
 # 4. Multi-threaded HTTP Request Handler
 class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
@@ -912,6 +981,12 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 })
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
+
+        elif req_path == "/api/system/tunnel":
+            self._send_json({
+                "status": TUNNEL_STATUS,
+                "url": TUNNEL_URL
+            })
 
         # --- WeChat API GET routes ---
         elif req_path == "/api/wechat/status":
@@ -1358,6 +1433,18 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     threading.Thread(target=exit_later).start()
                 else:
                     self._send_json({"ok": False, "error": res.stderr})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+
+        elif self.path == "/api/system/tunnel":
+            try:
+                req_json = json.loads(post_data.decode('utf-8'))
+                action = req_json.get("active", False)
+                if action:
+                    start_ssh_tunnel()
+                else:
+                    stop_ssh_tunnel()
+                self._send_json({"ok": True})
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
 

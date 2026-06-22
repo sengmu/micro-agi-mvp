@@ -636,6 +636,18 @@
                         </div>
                     </div>
 
+                    <!-- Network Intranet Tunnel (localhost.run) -->
+                    <div style="margin-top: 10px; margin-bottom: 10px;">
+                        <div style="font-size: 0.75rem; font-weight: bold; color: white; margin-bottom: 8px;">外网远程访问 (内网穿透)</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                            <div style="display: flex; flex-direction: column; gap: 2px; max-width: 75%;">
+                                <span style="font-size: 0.72rem; color: white; display: flex; align-items: center; gap: 6px; font-weight: bold;">🌐 开启外网公共访问</span>
+                                <span id="settings-tunnel-status" style="font-size: 0.62rem; color: var(--text-muted); word-break: break-all;">已关闭</span>
+                            </div>
+                            <input type="checkbox" id="settings-tunnel-checkbox" onchange="toggleTunnelConnection()" style="width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer;">
+                        </div>
+                    </div>
+
                     <!-- Layout & Voice switches -->
                     <div>
                         <div style="font-size: 0.75rem; font-weight: bold; color: white; margin-bottom: 8px;">视图与交互开关</div>
