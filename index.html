@@ -17,7 +17,7 @@
     <script src="/pixi.min.js?v=5"></script>
     <script src="/live2dcubismcore.min.js?v=4"></script>
     <script src="/pixi-live2d-display.min.js?v=4"></script>
-    <link rel="stylesheet" href="/style.css?v=1.3.9">
+    <link rel="stylesheet" href="/style.css?v=1.4.1">
 </head>
 <body>
 
@@ -153,154 +153,7 @@
             </div>
         </div>
 
-        <!-- Skills & Tools Store Overlay & Drawer -->
-        <div class="drawer-backdrop" id="skillsStoreOverlay" onclick="toggleStore()" style="z-index: 99;"></div>
-        <div class="workspace-console-drawer" id="skillsStoreDrawer" style="z-index: 100;">
-            <!-- Header -->
-            <div class="wardrobe-header" style="padding: 20px 24px 12px; border-bottom: none;">
-                <h2 style="font-size: 1.2rem; font-weight: bold; margin: 0; display: flex; align-items: center; gap: 8px; color: white; text-shadow: 0 0 10px rgba(6, 182, 212, 0.45);">
-                    <span>🧠</span> 智能技能与工具商店 (Skill Market)
-                </h2>
-                <button class="icon-btn" onclick="toggleStore()" style="background: rgba(255,255,255,0.05); border: none;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
 
-            <!-- Search bar -->
-            <div class="search-container" style="padding: 0 24px 12px; z-index: 10;">
-                <input type="text" id="extension-search" placeholder="搜索已激活的技能与端点..." oninput="filterConsoleExtensions()" style="width: 100%; padding: 10px 16px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 12px; color: white; font-size: 0.8rem; outline: none; box-sizing: border-box; transition: all 0.3s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border-color)'">
-            </div>
-
-            <!-- Scroll View -->
-            <div class="extensions-scroll-view" style="flex: 1; overflow-y: auto; padding: 0 24px 24px; display: flex; flex-direction: column; gap: 20px;">
-                <!-- Section 1: Autonomous Skills -->
-                <div class="console-section" id="section-skills" style="display: flex; flex-direction: column; gap: 12px;">
-                    <h3 style="font-size: 0.88rem; color: var(--primary); margin: 0 0 4px 0; display: flex; align-items: center; gap: 8px;">
-                        <span>🧠</span> AI 智能工作流与自研技能 (Workflow Skills)
-                    </h3>
-                    <div id="dynamic-skills-container" style="display: flex; flex-direction: column; gap: 12px;">
-                        <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">正在加载自研技能列表...</div>
-                    </div>
-                </div>
-
-                <!-- Section 2: MCP Connection -->
-                <div class="console-section" id="section-mcp" style="display: flex; flex-direction: column; gap: 12px;">
-                    <h3 style="font-size: 0.88rem; color: #22d3ee; margin: 10px 0 4px 0; display: flex; align-items: center; gap: 8px;">
-                        <span>🔌</span> MCP 协议端点扩展 (MCP Tools)
-                    </h3>
-                    <div id="dynamic-mcp-container" style="display: flex; flex-direction: column; gap: 12px;">
-                        <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">正在加载 MCP 端点列表...</div>
-                    </div>
-                </div>
-
-                <!-- Section 3: Built-in System Tools -->
-                <div class="console-section" id="section-system-tools" style="display: flex; flex-direction: column; gap: 12px;">
-                    <h3 style="font-size: 0.88rem; color: #8b5cf6; margin: 10px 0 4px 0; display: flex; align-items: center; gap: 8px;">
-                        <span>⚡</span> 系统内置快捷工具 (System Tools)
-                    </h3>
-                    
-                    <!-- Static Tool 1: Video Downloader -->
-                    <div class="tool-card" style="margin: 0;">
-                        <div class="tool-title">
-                            <span>🎥</span> 万能视频下载器
-                        </div>
-                        <div class="tool-desc">
-                            输入 B站/抖音/YouTube 等视频链接，AI 将自动在后台下载视频并保存到手机公共“Download”相册中。
-                        </div>
-                        <input type="text" class="tool-input" id="tool-video-url" placeholder="粘贴视频链接在这里...">
-                        <button class="tool-btn" onclick="triggerVideoDownload()">开始下载</button>
-                    </div>
-
-                    <!-- Static Tool 2: Bing Wallpaper Changer -->
-                    <div class="tool-card" style="margin: 0;">
-                        <div class="tool-title">
-                            <span>🖼️</span> 每日必应壁纸更换
-                        </div>
-                        <div class="tool-desc">
-                            一键拉取今日 Bing 官网高清主图，并自动设置为您手机的桌面壁纸。
-                        </div>
-                        <button class="tool-btn" onclick="triggerWallpaperChange()">立即更换壁纸</button>
-                    </div>
-
-                    <!-- Static Tool 3: TTS Voice Speaking -->
-                    <div class="tool-card" style="margin: 0;">
-                        <div class="tool-title">
-                            <span>🗣️</span> 语音朗读播报
-                        </div>
-                        <div class="tool-desc">
-                            输入您想让手机读出的话，AI 将调用系统 TTS 引擎大声念出来。
-                        </div>
-                        <input type="text" class="tool-input" id="tool-tts-text" placeholder="输入要朗读的文字...">
-                        <button class="tool-btn" onclick="triggerTTS()">开始朗读</button>
-                    </div>
-
-                    <!-- Static Tool 4: Clean up logs and cache -->
-                    <div class="tool-card" style="margin: 0;">
-                        <div class="tool-title">
-                            <span>🧹</span> 系统垃圾清理建议
-                        </div>
-                        <div class="tool-desc">
-                            自动扫描 Termux 运行日志、历史会话及系统临时缓存大小，并给出清理方案。
-                        </div>
-                        <button class="tool-btn" onclick="triggerCleanUpScan()">扫描系统垃圾</button>
-                    </div>
-
-                    <!-- Static Tool 5: Mobile Hardware Controller -->
-                    <div class="tool-card" style="margin: 0;">
-                        <div class="tool-title">
-                            <span>📱</span> 手机本地硬件控制器
-                        </div>
-                        <div class="tool-desc">
-                            直接调用 Termux-API 控制手机底层硬件（如手电筒、震动、剪贴板、电池状态等）。
-                        </div>
-                        
-                        <!-- Flashlight & Vibration -->
-                        <div style="display: flex; gap: 10px; margin-top: 4px;">
-                            <button id="hw-torch-btn" class="tool-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 10px rgba(245,158,11,0.15);" onclick="toggleHardwareTorch()">
-                                🔦 开手电筒
-                            </button>
-                            <button class="tool-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #ec4899, #be185d); box-shadow: 0 4px 10px rgba(236,72,153,0.15);" onclick="triggerHardwareVibrate(500)">
-                                📳 手机震动
-                            </button>
-                        </div>
-
-                        <!-- Clipboard and Battery Info -->
-                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px; background: rgba(0,0,0,0.2); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03);">
-                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
-                                <span style="color: var(--text-muted);">🔋 电池电量:</span>
-                                <span id="hw-battery-percentage" style="font-weight: bold; color: var(--success);">--</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
-                                <span style="color: var(--text-muted);">⚡ 充放电状态:</span>
-                                <span id="hw-battery-status" style="font-weight: bold;">--</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">
-                                <span style="color: var(--text-muted);">🌡️ 电池温度:</span>
-                                <span id="hw-battery-temp" style="font-weight: bold; color: #f59e0b;">--</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 0.75rem;">
-                                <span style="color: var(--text-muted);">❤️ 电池健康度:</span>
-                                <span id="hw-battery-health" style="font-weight: bold; color: var(--primary);">--</span>
-                            </div>
-                            <!-- Charge warning banner -->
-                            <div id="hw-battery-warning" style="display: none; align-items: center; gap: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 6px 10px; margin-top: 4px; font-size: 0.7rem; color: #fca5a5;">
-                                ⚠️ 提示：电池温度过高或处于非健康状态，建议断开充电器。
-                            </div>
-                        </div>
-
-                        <!-- System Clipboard controller -->
-                        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-                            <label style="font-size: 0.75rem; color: var(--text-muted);">📋 手机系统剪贴板实时同步：</label>
-                            <textarea class="tool-input" id="hw-clipboard-text" style="height: 60px; font-family: monospace; font-size: 0.75rem; border-radius: 10px;" placeholder="点击获取或编辑剪贴板内容..."></textarea>
-                            <div style="display: flex; gap: 8px;">
-                                <button class="tool-btn" style="flex: 1; padding: 6px 12px; font-size: 0.75rem; background: rgba(255,255,255,0.05); box-shadow: none;" onclick="pullHardwareClipboard()">拉取剪贴板</button>
-                                <button class="tool-btn" style="flex: 1; padding: 6px 12px; font-size: 0.75rem;" onclick="pushHardwareClipboard()">写入剪贴板</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
         </div>
 
         <!-- Left Chat History Drawer Backdrop -->
@@ -671,6 +524,50 @@
         </div>
     </div>
 
-    <script src="/script.js?v=1.3.9"></script>
+    <!-- Skills & Tools Store Overlay & Drawer -->
+    <div class="drawer-backdrop" id="skillsStoreOverlay" onclick="toggleStore()"></div>
+    <div class="workspace-console-drawer" id="skillsStoreDrawer">
+        <!-- Header -->
+        <div class="wardrobe-header" style="padding: 20px 24px 12px; border-bottom: none;">
+            <h2 style="font-size: 1.2rem; font-weight: bold; margin: 0; display: flex; align-items: center; gap: 8px; color: white; text-shadow: 0 0 10px rgba(6, 182, 212, 0.45);">
+                <span>🧠</span> 智能技能与工具商店 (Skill Market)
+            </h2>
+            <button class="icon-btn" onclick="toggleStore()" style="background: rgba(255,255,255,0.05); border: none;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+
+        <!-- Search bar -->
+        <div class="search-container" style="padding: 0 24px 12px; z-index: 10;">
+            <input type="text" id="extension-search" placeholder="搜索已激活的技能与端点..." oninput="filterConsoleExtensions()" style="width: 100%; padding: 10px 16px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 12px; color: white; font-size: 0.8rem; outline: none; box-sizing: border-box; transition: all 0.3s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border-color)'">
+        </div>
+
+        <!-- Scroll View -->
+        <div class="extensions-scroll-view" style="flex: 1; overflow-y: auto; padding: 0 24px 24px; display: flex; flex-direction: column; gap: 20px;">
+            <!-- Section 1: Autonomous Skills -->
+            <div class="console-section" id="section-skills" style="display: flex; flex-direction: column; gap: 12px;">
+                <h3 style="font-size: 0.88rem; color: var(--primary); margin: 0 0 4px 0; display: flex; align-items: center; gap: 8px;">
+                    <span>🧠</span> AI 智能工作流与自研技能 (Workflow Skills)
+                </h3>
+                <div id="dynamic-skills-container" style="display: flex; flex-direction: column; gap: 12px;">
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">正在加载自研技能列表...</div>
+                </div>
+            </div>
+
+            <!-- Section 2: MCP Connection -->
+            <div class="console-section" id="section-mcp" style="display: flex; flex-direction: column; gap: 12px;">
+                <h3 style="font-size: 0.88rem; color: #22d3ee; margin: 10px 0 4px 0; display: flex; align-items: center; gap: 8px;">
+                    <span>🔌</span> MCP 协议端点扩展 (MCP Tools)
+                </h3>
+                <div id="dynamic-mcp-container" style="display: flex; flex-direction: column; gap: 12px;">
+                    <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">正在加载 MCP 端点列表...</div>
+                </div>
+            </div>
+
+
+        </div>
+    </div>
+
+    <script src="/script.js?v=1.4.1"></script>
 </body>
 </html>

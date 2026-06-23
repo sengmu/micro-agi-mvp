@@ -2041,8 +2041,21 @@
         window.addEventListener('DOMContentLoaded', () => {
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js')
-                    .then((reg) => console.log('Service Worker registered successfully:', reg.scope))
+                    .then((reg) => {
+                        console.log('Service Worker registered successfully:', reg.scope);
+                        // Force check for updates immediately
+                        reg.update();
+                    })
                     .catch((err) => console.warn('Service Worker registration failed:', err));
+
+                // Reload the page when the new service worker takes over
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (!refreshing) {
+                        refreshing = true;
+                        window.location.reload();
+                    }
+                });
             }
 
             const savedTheme = localStorage.getItem('micro-agi-theme');
