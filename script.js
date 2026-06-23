@@ -2590,46 +2590,43 @@
         }
 
         function toggleStore() {
-            const drawer = document.getElementById('workspaceConsoleDrawer');
+            const drawer = document.getElementById('skillsStoreDrawer');
+            const overlay = document.getElementById('skillsStoreOverlay');
+            if (!drawer || !overlay) return;
+            
+            // Close console drawer if open
+            const consoleDrawer = document.getElementById('workspaceConsoleDrawer');
+            const consoleOverlay = document.getElementById('workspaceConsoleOverlay');
+            if (consoleDrawer && consoleDrawer.classList.contains('active')) {
+                consoleDrawer.classList.remove('active');
+                if (consoleOverlay) consoleOverlay.classList.remove('active');
+            }
+            
+            const isMoreMenuOpen = document.getElementById('more-menu-drawer').classList.contains('open');
+            if (isMoreMenuOpen) closeMoreMenu();
+            
             if (drawer.classList.contains('active')) {
-                const activeTab = document.querySelector('.console-tab.active');
-                const tabs = document.querySelectorAll('.console-tab');
-                if (activeTab === tabs[1]) {
-                    toggleWorkspaceConsole();
-                } else {
-                    switchConsoleTab(1);
-                    setTimeout(() => {
-                        const sec = document.getElementById('section-skills');
-                        if (sec) sec.scrollIntoView({ behavior: 'smooth' });
-                    }, 100);
-                }
+                overlay.classList.remove('active');
+                drawer.classList.remove('active');
+                drawer.style.display = 'none';
             } else {
-                toggleWorkspaceConsole();
-                switchConsoleTab(1);
-                setTimeout(() => {
-                    const sec = document.getElementById('section-skills');
-                    if (sec) sec.scrollIntoView({ behavior: 'smooth' });
-                }, 100);
+                overlay.classList.add('active');
+                drawer.classList.add('active');
+                drawer.style.display = 'flex';
+                
+                loadExtensions();
+                refreshHardwareBattery();
+                pullHardwareClipboard();
             }
         }
 
         function toggleMCP() {
-            const drawer = document.getElementById('workspaceConsoleDrawer');
-            if (drawer.classList.contains('active')) {
-                const activeTab = document.querySelector('.console-tab.active');
-                const tabs = document.querySelectorAll('.console-tab');
-                if (activeTab === tabs[1]) {
-                    toggleWorkspaceConsole();
-                } else {
-                    switchConsoleTab(1);
-                    setTimeout(() => {
-                        const sec = document.getElementById('section-mcp');
-                        if (sec) sec.scrollIntoView({ behavior: 'smooth' });
-                    }, 100);
-                }
+            const drawer = document.getElementById('skillsStoreDrawer');
+            if (drawer && drawer.classList.contains('active')) {
+                const sec = document.getElementById('section-mcp');
+                if (sec) sec.scrollIntoView({ behavior: 'smooth' });
             } else {
-                toggleWorkspaceConsole();
-                switchConsoleTab(1);
+                toggleStore();
                 setTimeout(() => {
                     const sec = document.getElementById('section-mcp');
                     if (sec) sec.scrollIntoView({ behavior: 'smooth' });
@@ -3366,6 +3363,8 @@
         window.toggleSkillsChips = toggleSkillsChips;
         window.renderSkillsChips = renderSkillsChips;
         window.restoreDefaultChips = restoreDefaultChips;
+        window.toggleStore = toggleStore;
+        window.toggleMCP = toggleMCP;
 
         // Auto fetch list at startup to populate allExtensionsData
         loadExtensions();
