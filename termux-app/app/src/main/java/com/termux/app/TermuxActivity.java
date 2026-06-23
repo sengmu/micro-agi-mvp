@@ -37,11 +37,55 @@ public class TermuxActivity extends Activity implements ServiceConnection {
         mWebView = findViewById(R.id.agi_webview);
         setupWebView();
         checkPermissions();
+        extractAgiAssetsIfNeeded();
 
         // Bind Termux background service to run python and command terminal backend
         Intent serviceIntent = new Intent(this, TermuxService.class);
         startService(serviceIntent);
         bindService(serviceIntent, this, Context.BIND_AUTO_CREATE);
+    }
+
+    private void extractAgiAssetsIfNeeded() {
+        java.io.File targetDir = new java.io.File("/data/data/com.termux/files/home/micro-agi-mvp");
+        if (!targetDir.exists()) {
+            targetDir.mkdirs();
+            try {
+                java.io.InputStream is = getAssets().open("micro-agi-mvp.zip");
+                unzip(is, "/data/data/com.termux/files/home");
+                is.close();
+                android.util.Log.d("TermuxActivity", "Assets extracted successfully.");
+            } catch (java.io.IOException e) {
+                android.util.Log.e("TermuxActivity", "Failed to extract assets", e);
+            }
+        }
+    }
+
+    private static void unzip(java.io.InputStream is, String targetDirPath) throws java.io.IOException {
+        java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.BufferedInputStream(is));
+        java.util.zip.ZipEntry ze;
+        byte[] buffer = new byte[4096];
+        while ((ze = zis.getNextEntry()) != null) {
+            java.io.File file = new java.io.File(targetDirPath, ze.getName());
+            if (ze.isDirectory()) {
+                file.mkdirs();
+            } else {
+                java.io.File parent = file.getParentFile();
+                if (parent != null) {
+                    parent.mkdirs();
+                }
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
+                java.io.BufferedOutputStream bos = new java.io.BufferedOutputStream(fos, buffer.length);
+                int count;
+                while ((count = zis.read(buffer, 0, buffer.length)) != -1) {
+                    bos.write(buffer, 0, count);
+                }
+                bos.flush();
+                bos.close();
+                fos.close();
+            }
+            zis.closeEntry();
+        }
+        zis.close();
     }
 
     private void setupWebView() {
