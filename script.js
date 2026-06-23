@@ -2341,6 +2341,7 @@
             if (idx === 0) {
                 loadArtifacts();
             } else if (idx === 1) {
+                loadExtensions();
                 refreshHardwareBattery();
                 pullHardwareClipboard();
             }
@@ -2593,14 +2594,22 @@
             if (drawer.classList.contains('active')) {
                 const activeTab = document.querySelector('.console-tab.active');
                 const tabs = document.querySelectorAll('.console-tab');
-                if (activeTab === tabs[2]) {
+                if (activeTab === tabs[1]) {
                     toggleWorkspaceConsole();
                 } else {
-                    switchConsoleTab(2);
+                    switchConsoleTab(1);
+                    setTimeout(() => {
+                        const sec = document.getElementById('section-skills');
+                        if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
                 }
             } else {
                 toggleWorkspaceConsole();
-                switchConsoleTab(2);
+                switchConsoleTab(1);
+                setTimeout(() => {
+                    const sec = document.getElementById('section-skills');
+                    if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
             }
         }
 
@@ -2609,14 +2618,22 @@
             if (drawer.classList.contains('active')) {
                 const activeTab = document.querySelector('.console-tab.active');
                 const tabs = document.querySelectorAll('.console-tab');
-                if (activeTab === tabs[3]) {
+                if (activeTab === tabs[1]) {
                     toggleWorkspaceConsole();
                 } else {
-                    switchConsoleTab(3);
+                    switchConsoleTab(1);
+                    setTimeout(() => {
+                        const sec = document.getElementById('section-mcp');
+                        if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
                 }
             } else {
                 toggleWorkspaceConsole();
-                switchConsoleTab(3);
+                switchConsoleTab(1);
+                setTimeout(() => {
+                    const sec = document.getElementById('section-mcp');
+                    if (sec) sec.scrollIntoView({ behavior: 'smooth' });
+                }, 100);
             }
         }
 
@@ -3120,3 +3137,290 @@
 
         window.checkTunnelStatus = checkTunnelStatus;
         window.toggleTunnelConnection = toggleTunnelConnection;
+
+        // --- Extensions, Skills & MCP Integration ---
+        let allExtensionsData = [];
+        let showingSkillsChips = false;
+
+        async function loadExtensions() {
+            const skillsContainer = document.getElementById('dynamic-skills-container');
+            const mcpContainer = document.getElementById('dynamic-mcp-container');
+            if (!skillsContainer || !mcpContainer) return;
+            
+            try {
+                const response = await fetch('/api/system/extensions');
+                allExtensionsData = await response.json();
+                renderExtensions(allExtensionsData);
+            } catch (err) {
+                console.error("加载扩展/技能失败:", err);
+                skillsContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--error); font-size: 0.75rem;">加载失败: ${err.message}</div>`;
+                mcpContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--error); font-size: 0.75rem;">加载失败: ${err.message}</div>`;
+            }
+        }
+
+        function renderExtensions(extensions) {
+            const skillsContainer = document.getElementById('dynamic-skills-container');
+            const mcpContainer = document.getElementById('dynamic-mcp-container');
+            if (!skillsContainer || !mcpContainer) return;
+            
+            skillsContainer.innerHTML = '';
+            mcpContainer.innerHTML = '';
+            
+            const skillsList = extensions.filter(e => e.type === 'skill' || e.type === 'plugin');
+            const mcpList = extensions.filter(e => e.type === 'mcp');
+            
+            if (skillsList.length === 0) {
+                skillsContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">无符合条件的自研技能</div>`;
+            } else {
+                skillsList.forEach(ext => {
+                    skillsContainer.appendChild(createExtensionCard(ext));
+                });
+            }
+            
+            if (mcpList.length === 0) {
+                mcpContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">无符合条件的 MCP 端点</div>`;
+            } else {
+                mcpList.forEach(ext => {
+                    mcpContainer.appendChild(createExtensionCard(ext));
+                });
+            }
+        }
+
+        function createExtensionCard(ext) {
+            const card = document.createElement('div');
+            card.className = 'extension-card';
+            card.setAttribute('data-id', ext.id);
+            card.setAttribute('data-type', ext.type);
+            
+            const isChecked = ext.enabled ? 'checked' : '';
+            const statusText = (ext.type === 'mcp') 
+                ? (ext.enabled ? '● 在线' : '○ 已停用')
+                : (ext.enabled ? '● 已激活' : '○ 已停用');
+            const statusClass = ext.enabled ? (ext.type === 'mcp' ? 'online' : 'active') : 'disabled';
+            
+            card.innerHTML = `
+                <div class="extension-header">
+                    <div class="extension-title-block">
+                        <span class="extension-icon">${ext.icon || '🧩'}</span>
+                        <div class="extension-details">
+                            <div class="extension-name">${ext.name}</div>
+                            <div class="extension-type-badge ${ext.type}">${ext.type === 'skill' ? '技能库' : ext.type === 'mcp' ? 'MCP 端点' : '内置插件'}</div>
+                        </div>
+                    </div>
+                    <div class="extension-status-block">
+                        <span class="status-indicator ${statusClass}">${statusText}</span>
+                        <label class="switch-container">
+                            <input type="checkbox" ${isChecked} onchange="toggleExtensionState('${ext.id}', this.checked)">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="extension-desc">${ext.description}</div>
+            `;
+            return card;
+        }
+
+        async function toggleExtensionState(id, enabled) {
+            try {
+                const response = await fetch('/api/system/extensions/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, enabled })
+                });
+                const res = await response.json();
+                if (res.status === 'success') {
+                    showToast(`${enabled ? '开启' : '停用'} 成功 ⚙️`);
+                    
+                    // Update UI status indicator
+                    const card = document.querySelector(`.extension-card[data-id="${id}"]`);
+                    if (card) {
+                        const indicator = card.querySelector('.status-indicator');
+                        const extType = card.getAttribute('data-type');
+                        if (indicator) {
+                            indicator.className = `status-indicator ${enabled ? (extType === 'mcp' ? 'online' : 'active') : 'disabled'}`;
+                            indicator.textContent = extType === 'mcp' 
+                                ? (enabled ? '● 在线' : '○ 已停用')
+                                : (enabled ? '● 已激活' : '○ 已停用');
+                        }
+                    }
+                    
+                    // Update local list
+                    const index = allExtensionsData.findIndex(e => e.id === id);
+                    if (index !== -1) {
+                        allExtensionsData[index].enabled = enabled;
+                        allExtensionsData[index].status = enabled ? (allExtensionsData[index].type === 'mcp' ? 'online' : 'active') : 'disabled';
+                    }
+                    
+                    if (showingSkillsChips) {
+                        renderSkillsChips();
+                    }
+                } else {
+                    showToast(`操作失败: ${res.error}`);
+                    const checkbox = document.querySelector(`.extension-card[data-id="${id}"] input[type="checkbox"]`);
+                    if (checkbox) checkbox.checked = !enabled;
+                }
+            } catch (err) {
+                showToast(`请求错误: ${err.message}`);
+                const checkbox = document.querySelector(`.extension-card[data-id="${id}"] input[type="checkbox"]`);
+                if (checkbox) checkbox.checked = !enabled;
+            }
+        }
+
+        function filterConsoleExtensions() {
+            const query = document.getElementById('extension-search').value.toLowerCase().trim();
+            if (!query) {
+                renderExtensions(allExtensionsData);
+                return;
+            }
+            const filtered = allExtensionsData.filter(ext => 
+                ext.name.toLowerCase().includes(query) || 
+                ext.description.toLowerCase().includes(query) ||
+                ext.id.toLowerCase().includes(query)
+            );
+            renderExtensions(filtered);
+        }
+
+        function toggleSkillsChips() {
+            showingSkillsChips = !showingSkillsChips;
+            const toggleBtn = document.getElementById('skills-toggle-btn');
+            if (toggleBtn) {
+                if (showingSkillsChips) {
+                    toggleBtn.style.color = '#ef4444'; // Highlight Rose color when active
+                    toggleBtn.title = "显示默认指令";
+                } else {
+                    toggleBtn.style.color = 'var(--primary)';
+                    toggleBtn.title = "快捷技能与扩展";
+                }
+            }
+            
+            if (showingSkillsChips) {
+                renderSkillsChips();
+            } else {
+                restoreDefaultChips();
+            }
+        }
+
+        function renderSkillsChips() {
+            const container = document.querySelector('.suggestions-container');
+            if (!container) return;
+            
+            const activeExts = allExtensionsData.filter(e => e.enabled);
+            if (activeExts.length === 0) {
+                container.innerHTML = `<div style="font-size: 0.72rem; color: var(--text-muted); padding: 4px 8px; width: 100%; text-align: center;">没有已激活的扩展技能。请在控制台激活。</div>`;
+                return;
+            }
+            
+            container.innerHTML = '';
+            activeExts.forEach(ext => {
+                const chip = document.createElement('button');
+                chip.className = 'suggestion-chip';
+                chip.style.marginRight = '8px';
+                
+                if (ext.type === 'skill') {
+                    chip.style.borderColor = 'rgba(6, 182, 212, 0.4)';
+                } else if (ext.type === 'mcp') {
+                    chip.style.borderColor = 'rgba(34, 211, 238, 0.4)';
+                } else {
+                    chip.style.borderColor = 'rgba(139, 92, 246, 0.4)';
+                }
+                
+                chip.innerHTML = `${ext.icon || '🧠'} ${ext.name}`;
+                chip.onclick = () => {
+                    const commandPrefix = `/${ext.id} `;
+                    chatInput.value = commandPrefix;
+                    chatInput.focus();
+                };
+                container.appendChild(chip);
+            });
+        }
+
+        function restoreDefaultChips() {
+            const container = document.querySelector('.suggestions-container');
+            if (!container) return;
+            container.innerHTML = `
+                <div class="suggestion-chip" onclick="sendSuggestion('查看当前系统硬件配置')">🔍 查系统信息</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('列出当前文件夹下的全部文件')">📂 看当前文件</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('生成一个名叫 test_hello.txt 的文件并在里面写上 Hello World')">📝 写测试文件</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('检查我的本地 IP 地址 and 网络状态')">🌐 查网络 IP</div>
+            `;
+        }
+
+        // Attach them to window
+        window.loadExtensions = loadExtensions;
+        window.toggleExtensionState = toggleExtensionState;
+        window.filterConsoleExtensions = filterConsoleExtensions;
+        window.toggleSkillsChips = toggleSkillsChips;
+        window.renderSkillsChips = renderSkillsChips;
+        window.restoreDefaultChips = restoreDefaultChips;
+
+        // Auto fetch list at startup to populate allExtensionsData
+        loadExtensions();
+
+        // Slash command dropdown listener on input
+        chatInput.addEventListener('input', () => {
+            const val = chatInput.value;
+            const dropdown = document.getElementById('slash-command-dropdown');
+            if (!dropdown) return;
+            
+            if (val.startsWith('/')) {
+                const search = val.substring(1).toLowerCase();
+                const matches = allExtensionsData.filter(e => 
+                    e.enabled && (
+                        e.id.toLowerCase().includes(search) || 
+                        e.name.toLowerCase().includes(search)
+                    )
+                );
+                
+                if (matches.length > 0) {
+                    dropdown.innerHTML = '';
+                    matches.forEach(ext => {
+                        const item = document.createElement('div');
+                        item.style.padding = '8px 12px';
+                        item.style.cursor = 'pointer';
+                        item.style.display = 'flex';
+                        item.style.alignItems = 'center';
+                        item.style.justifyContent = 'space-between';
+                        item.style.fontSize = '0.8rem';
+                        item.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        item.style.transition = 'background 0.2s';
+                        
+                        item.addEventListener('mouseenter', () => {
+                            item.style.background = 'rgba(255, 255, 255, 0.05)';
+                        });
+                        item.addEventListener('mouseleave', () => {
+                            item.style.background = 'transparent';
+                        });
+                        
+                        item.innerHTML = `
+                            <div style="display: flex; align-items: center; gap: 8px; color: var(--text-color);">
+                                <span>${ext.icon || '🧩'}</span>
+                                <span style="font-weight: 600;">/${ext.id}</span>
+                                <span style="color: var(--text-muted); font-size: 0.72rem;">${ext.name}</span>
+                            </div>
+                            <div style="font-size: 0.65rem; color: var(--text-muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                ${ext.description}
+                            </div>
+                        `;
+                        
+                        item.onclick = () => {
+                            chatInput.value = `/${ext.id} `;
+                            dropdown.style.display = 'none';
+                            chatInput.focus();
+                        };
+                        dropdown.appendChild(item);
+                    });
+                    dropdown.style.display = 'block';
+                } else {
+                    dropdown.style.display = 'none';
+                }
+            } else {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            const dropdown = document.getElementById('slash-command-dropdown');
+            if (dropdown && !chatInput.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });

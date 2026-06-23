@@ -17,7 +17,7 @@
     <script src="/pixi.min.js?v=5"></script>
     <script src="/live2dcubismcore.min.js?v=4"></script>
     <script src="/pixi-live2d-display.min.js?v=4"></script>
-    <link rel="stylesheet" href="/style.css?v=1.2.7">
+    <link rel="stylesheet" href="/style.css?v=1.2.8">
 </head>
 <body>
 
@@ -83,6 +83,8 @@
 
         <!-- Input Area -->
         <div class="input-panel">
+            <!-- Slash command autocomplete dropdown -->
+            <div id="slash-command-dropdown" style="display: none; position: absolute; bottom: 100%; left: 16px; right: 16px; background: rgba(17, 24, 39, 0.95); border: 1px solid var(--border-color); border-radius: 12px; max-height: 160px; overflow-y: auto; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.5); backdrop-filter: blur(10px); margin-bottom: 8px;"></div>
             <!-- Suggestion quick chips -->
             <div class="suggestions-container" style="padding: 0 4px; margin-bottom: 4px;">
                 <div class="suggestion-chip" onclick="sendSuggestion('查看当前系统硬件配置')">🔍 查系统信息</div>
@@ -99,6 +101,9 @@
                         <line x1="12" y1="8" x2="12" y2="16"></line>
                         <line x1="8" y1="12" x2="16" y2="12"></line>
                     </svg>
+                </button>
+                <button class="attach-btn" id="skills-toggle-btn" onclick="toggleSkillsChips()" title="快捷技能与扩展" style="margin-right: 4px; color: var(--primary);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"></path><path d="m14 7 3 3"></path><path d="M5 6v4"></path><path d="M19 14v4"></path><path d="M10 2v2"></path><path d="M7 8H3"></path><path d="M21 16h-4"></path><path d="M11 3H9"></path></svg>
                 </button>
                 <input type="text" class="chat-input" id="chatInput" placeholder="输入一条控制指令或发张图..." autocomplete="off">
                 <button class="mic-btn" id="micBtn" onclick="toggleVoiceInput()" title="语音输入">
@@ -137,9 +142,7 @@
             <!-- Navigation Tabs -->
             <div class="wardrobe-tabs" style="margin-bottom: 12px;">
                 <div class="wardrobe-tab console-tab active" onclick="switchConsoleTab(0)">🏆 成果资产</div>
-                <div class="wardrobe-tab console-tab" onclick="switchConsoleTab(1)">⚡ 快捷小工具</div>
-                <div class="wardrobe-tab console-tab" onclick="switchConsoleTab(2)">🔌 插件商店</div>
-                <div class="wardrobe-tab console-tab" onclick="switchConsoleTab(3)">🔗 MCP端点</div>
+                <div class="wardrobe-tab console-tab" onclick="switchConsoleTab(1)">🧠 扩展技能</div>
             </div>
 
             <!-- Panes -->
@@ -155,128 +158,152 @@
                 </div>
             </div>
 
-            <!-- Pane 1: Shortcut Tools -->
-            <div class="wardrobe-pane console-pane" id="console-pane-tools" style="display: none; flex-direction: column; flex: 1; overflow-y: auto; padding: 0 24px 20px; gap: 12px;">
-                <!-- Tool 1: Video Downloader -->
-                <div class="tool-card" style="margin: 0;">
-                    <div class="tool-title">
-                        <span>🎥</span> 万能视频下载器
-                    </div>
-                    <div class="tool-desc">
-                        输入 B站/抖音/YouTube 等视频链接，AI 将自动在后台下载视频并保存到手机公共“Download”相册中。
-                    </div>
-                    <input type="text" class="tool-input" id="tool-video-url" placeholder="粘贴视频链接在这里...">
-                    <button class="tool-btn" onclick="triggerVideoDownload()">开始下载</button>
+            <!-- Pane 1: Extensions & Skills -->
+            <div class="wardrobe-pane console-pane" id="console-pane-extensions" style="display: none; flex-direction: column; flex: 1; overflow: hidden;">
+                <!-- Search bar -->
+                <div class="search-container" style="padding: 0 24px 10px; z-index: 10;">
+                    <input type="text" id="extension-search" placeholder="搜索技能与端点..." oninput="filterConsoleExtensions()" style="width: 100%; padding: 8px 12px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; color: white; font-size: 0.78rem; outline: none; box-sizing: border-box;">
                 </div>
 
-                <!-- Tool 2: Bing Wallpaper Changer -->
-                <div class="tool-card" style="margin: 0;">
-                    <div class="tool-title">
-                        <span>🖼️</span> 每日必应壁纸更换
-                    </div>
-                    <div class="tool-desc">
-                        一键拉取今日 Bing 官网高清主图，并自动设置为您手机的桌面壁纸。
-                    </div>
-                    <button class="tool-btn" onclick="triggerWallpaperChange()">立即更换壁纸</button>
-                </div>
-
-                <!-- Tool 3: TTS Voice Speaking -->
-                <div class="tool-card" style="margin: 0;">
-                    <div class="tool-title">
-                        <span>🗣️</span> 语音朗读播报
-                    </div>
-                    <div class="tool-desc">
-                        输入您想让手机读出的话，AI 将调用系统 TTS 引擎大声念出来。
-                    </div>
-                    <input type="text" class="tool-input" id="tool-tts-text" placeholder="输入要朗读的文字...">
-                    <button class="tool-btn" onclick="triggerTTS()">开始朗读</button>
-                </div>
-
-                <!-- Tool 4: Clean up logs and cache -->
-                <div class="tool-card" style="margin: 0;">
-                    <div class="tool-title">
-                        <span>🧹</span> 系统垃圾清理建议
-                    </div>
-                    <div class="tool-desc">
-                        自动扫描 Termux 运行日志、历史会话及系统临时缓存大小，并给出清理方案。
-                    </div>
-                    <button class="tool-btn" onclick="triggerCleanUpScan()">扫描系统垃圾</button>
-                </div>
-
-                <!-- Tool 5: Mobile Hardware Controller -->
-                <div class="tool-card" style="margin: 0;">
-                    <div class="tool-title">
-                        <span>📱</span> 手机本地硬件控
-                    </div>
-                    <div class="tool-desc">
-                        直接调用 Termux-API 控制手机底层硬件（如手电筒、震动、剪贴板、电池状态等）。
-                    </div>
-                    
-                    <!-- Flashlight & Vibration -->
-                    <div style="display: flex; gap: 10px; margin-top: 4px;">
-                        <button id="hw-torch-btn" class="tool-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 10px rgba(245,158,11,0.15);" onclick="toggleHardwareTorch()">
-                            🔦 开启手电筒
-                        </button>
-                        <button class="tool-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 10px rgba(239,68,68,0.15);" onclick="triggerHardwareVibrate()">
-                            📳 触发震动
-                        </button>
-                    </div>
-
-                    <!-- Vibration Duration slider -->
-                    <div style="display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,0.03); padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
-                        <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
-                            <span>震动时长</span>
-                            <span id="hw-vibrate-val" style="font-weight: 600; color: var(--primary);">200 ms</span>
-                        </div>
-                        <input type="range" id="hw-vibrate-duration" min="50" max="2000" step="50" value="200" style="width: 100%; accent-color: var(--primary); cursor: pointer;" oninput="document.getElementById('hw-vibrate-val').innerText = this.value + ' ms'">
-                    </div>
-                    
-                    <!-- Battery Status -->
-                    <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 8px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 6px;">
-                                <span>🔋</span> 电池状态信息
-                            </div>
-                            <button class="suggestion-chip" style="margin: 0; padding: 2px 8px; font-size: 0.7rem; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); cursor: pointer;" onclick="refreshHardwareBattery()">
-                                🔄 刷新
-                            </button>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.75rem;">
-                            <div style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 8px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.02);">
-                                <span style="color: var(--text-muted); font-size: 0.7rem;">当前电量</span>
-                                <span id="hw-battery-percentage" style="font-size: 0.95rem; font-weight: bold; color: var(--primary); margin-top: 2px;">-- %</span>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 8px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.02);">
-                                <span style="color: var(--text-muted); font-size: 0.7rem;">电池状态</span>
-                                <span id="hw-battery-status" style="font-size: 0.95rem; font-weight: bold; color: var(--success); margin-top: 2px;">--</span>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 8px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.02);">
-                                <span style="color: var(--text-muted); font-size: 0.7rem;">电池温度</span>
-                                <span id="hw-battery-temp" style="font-size: 0.95rem; font-weight: bold; color: var(--secondary); margin-top: 2px;">-- °C</span>
-                            </div>
-                            <div style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 8px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.02);">
-                                <span style="color: var(--text-muted); font-size: 0.7rem;">健康状态</span>
-                                <span id="hw-battery-health" style="font-size: 0.95rem; font-weight: bold; color: #a78bfa; margin-top: 2px;">--</span>
-                            </div>
-                        </div>
-                        <div id="hw-battery-warning" style="display: none; font-size: 0.7rem; color: #f59e0b; display: flex; align-items: center; gap: 4px; margin-top: 2px;">
-                            <span>⚠️</span> <span>Termux-API 未检测到，显示模拟数据</span>
+                <div class="extensions-scroll-view" style="flex: 1; overflow-y: auto; padding: 0 24px 20px; display: flex; flex-direction: column; gap: 16px;">
+                    <!-- Section 1: Autonomous Skills -->
+                    <div class="console-section" id="section-skills" style="display: flex; flex-direction: column; gap: 10px;">
+                        <h3 style="font-size: 0.8rem; color: var(--primary); margin: 0 0 4px 0; display: flex; align-items: center; gap: 6px;">
+                            <span>🧠</span> 智能工作流与自研技能 (Skills)
+                        </h3>
+                        <div id="dynamic-skills-container" style="display: flex; flex-direction: column; gap: 12px;">
+                            <!-- Python skills loaded dynamically -->
+                            <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">正在加载自研技能列表...</div>
                         </div>
                     </div>
 
-                    <!-- Clipboard Sync (Two-Way) -->
-                    <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 8px;">
-                        <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 6px;">
-                            <span>📋</span> 双向剪贴板同步
+                    <!-- Section 2: MCP Connection -->
+                    <div class="console-section" id="section-mcp" style="display: flex; flex-direction: column; gap: 10px;">
+                        <h3 style="font-size: 0.8rem; color: #22d3ee; margin: 10px 0 4px 0; display: flex; align-items: center; gap: 6px;">
+                            <span>🔌</span> MCP 协议端点扩展 (MCP Tools)
+                        </h3>
+                        <div id="dynamic-mcp-container" style="display: flex; flex-direction: column; gap: 12px;">
+                            <!-- MCP connections loaded dynamically -->
+                            <div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">正在加载 MCP 端点列表...</div>
                         </div>
-                        <textarea id="hw-clipboard-text" class="tool-input" rows="2" style="border-radius: 10px; resize: none; font-family: monospace; font-size: 0.75rem; padding: 8px; width: 100%; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2);" placeholder="点击'读取'或在此输入文本写入手机剪贴板..."></textarea>
-                        <div style="display: flex; gap: 8px; width: 100%;">
-                            <button class="tool-btn" style="flex: 1; padding: 8px 12px; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;" onclick="pullHardwareClipboard()">
-                                📥 读取手机剪贴板
-                            </button>
-                            <button class="tool-btn" style="flex: 1; padding: 8px 12px; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 4px;" onclick="pushHardwareClipboard()">
-                                📤 写入手机剪贴板
-                            </button>
+                    </div>
+
+                    <!-- Section 3: Built-in System Tools -->
+                    <div class="console-section" id="section-system-tools" style="display: flex; flex-direction: column; gap: 12px;">
+                        <h3 style="font-size: 0.8rem; color: #8b5cf6; margin: 10px 0 4px 0; display: flex; align-items: center; gap: 6px;">
+                            <span>⚡</span> 系统内置快捷工具 (System Tools)
+                        </h3>
+                        <!-- Static Tool 1: Video Downloader -->
+                        <div class="tool-card" style="margin: 0;">
+                            <div class="tool-title">
+                                <span>🎥</span> 万能视频下载器
+                            </div>
+                            <div class="tool-desc">
+                                输入 B站/抖音/YouTube 等视频链接，AI 将自动在后台下载视频并保存到手机公共“Download”相册中。
+                            </div>
+                            <input type="text" class="tool-input" id="tool-video-url" placeholder="粘贴视频链接在这里...">
+                            <button class="tool-btn" onclick="triggerVideoDownload()">开始下载</button>
+                        </div>
+
+                        <!-- Static Tool 2: Bing Wallpaper Changer -->
+                        <div class="tool-card" style="margin: 0;">
+                            <div class="tool-title">
+                                <span>🖼️</span> 每日必应壁纸更换
+                            </div>
+                            <div class="tool-desc">
+                                一键拉取今日 Bing 官网高清主图，并自动设置为您手机的桌面壁纸。
+                            </div>
+                            <button class="tool-btn" onclick="triggerWallpaperChange()">立即更换壁纸</button>
+                        </div>
+
+                        <!-- Static Tool 3: TTS Voice Speaking -->
+                        <div class="tool-card" style="margin: 0;">
+                            <div class="tool-title">
+                                <span>🗣️</span> 语音朗读播报
+                            </div>
+                            <div class="tool-desc">
+                                输入您想让手机读出的话，AI 将调用系统 TTS 引擎大声念出来。
+                            </div>
+                            <input type="text" class="tool-input" id="tool-tts-text" placeholder="输入要朗读的文字...">
+                            <button class="tool-btn" onclick="triggerTTS()">开始朗读</button>
+                        </div>
+
+                        <!-- Static Tool 4: Clean up logs and cache -->
+                        <div class="tool-card" style="margin: 0;">
+                            <div class="tool-title">
+                                <span>🧹</span> 系统垃圾清理建议
+                            </div>
+                            <div class="tool-desc">
+                                自动扫描 Termux 运行日志、历史会话及系统临时缓存大小，并给出清理方案。
+                            </div>
+                            <button class="tool-btn" onclick="triggerCleanUpScan()">扫描系统垃圾</button>
+                        </div>
+
+                        <!-- Static Tool 5: Mobile Hardware Controller -->
+                        <div class="tool-card" style="margin: 0;">
+                            <div class="tool-title">
+                                <span>📱</span> 手机本地硬件控
+                            </div>
+                            <div class="tool-desc">
+                                直接调用 Termux-API 控制手机底层硬件（如手电筒、震动、剪贴板、电池状态等）。
+                            </div>
+                            
+                            <!-- Flashlight & Vibration -->
+                            <div style="display: flex; gap: 10px; margin-top: 4px;">
+                                <button id="hw-torch-btn" class="tool-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 10px rgba(245,158,11,0.15);" onclick="toggleHardwareTorch()">
+                                    🔦 开启手电筒
+                                </button>
+                                <button class="tool-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 10px rgba(239,68,68,0.15);" onclick="triggerHardwareVibrate()">
+                                    📳 触发震动
+                                </button>
+                            </div>
+
+                            <!-- Vibration Duration slider -->
+                            <div style="display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,0.03); padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+                                    <span>震动时长</span>
+                                    <span id="hw-vibrate-val" style="font-weight: 600; color: var(--primary);">200 ms</span>
+                                </div>
+                                <input type="range" id="hw-vibrate-duration" min="50" max="2000" step="50" value="200" style="width: 100%; accent-color: var(--primary); cursor: pointer;" oninput="document.getElementById('hw-vibrate-val').innerText = this.value + ' ms'">
+                            </div>
+                            
+                            <!-- Battery Status -->
+                            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 8px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 6px;">
+                                        <span>🔋</span> 电池状态信息
+                                    </div>
+                                    <button class="suggestion-chip" style="margin: 0; padding: 2px 8px; font-size: 0.7rem; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); cursor: pointer;" onclick="refreshHardwareBattery()">
+                                        🔄 刷新
+                                    </button>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.75rem;">
+                                    <div style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 8px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.02);">
+                                        <span style="color: var(--text-muted); font-size: 0.7rem;">当前电量</span>
+                                        <span id="hw-battery-percentage" style="font-size: 0.95rem; font-weight: bold; color: var(--primary); margin-top: 2px;">-- %</span>
+                                    </div>
+                                    <div style="background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 8px; display: flex; flex-direction: column; border: 1px solid rgba(255,255,255,0.02);">
+                                        <span style="color: var(--text-muted); font-size: 0.7rem;">电池状态</span>
+                                        <span id="hw-battery-status" style="font-size: 0.95rem; font-weight: bold; color: var(--success); margin-top: 2px;">--</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Two-way Clipboard Sync -->
+                            <div style="background: rgba(255,255,255,0.03); padding: 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); display: flex; flex-direction: column; gap: 8px;">
+                                <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-color); display: flex; align-items: center; gap: 6px;">
+                                    <span>📋</span> 双向剪贴板同步
+                                </div>
+                                <textarea id="hw-clipboard-text" class="tool-input" rows="2" style="border-radius: 10px; resize: none; font-family: monospace; font-size: 0.75rem; padding: 8px; width: 100%; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2);" placeholder="点击'读取'或在此输入文本写入手机剪贴板..."></textarea>
+                                <div style="display: flex; gap: 8px; width: 100%;">
+                                    <button class="tool-btn" style="flex: 1; padding: 8px 12px; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); box-shadow: none;" onclick="pullHardwareClipboard()">
+                                        📥 读取手机剪贴板
+                                    </button>
+                                    <button class="tool-btn" style="flex: 1; padding: 8px 12px; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 4px;" onclick="pushHardwareClipboard()">
+                                        📤 写入手机剪贴板
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -767,6 +794,6 @@
         </div>
     </div>
 
-    <script src="/script.js?v=1.2.5"></script>
+    <script src="/script.js?v=1.2.6"></script>
 </body>
 </html>

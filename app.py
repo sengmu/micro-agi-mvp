@@ -811,6 +811,24 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode('utf-8'))
 
+    def _parse_skill_md(self, path):
+        try:
+            content = path.read_text(encoding='utf-8')
+            match = re.search(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+            if match:
+                yaml_content = match.group(1)
+                name = None
+                desc = None
+                for line in yaml_content.split('\n'):
+                    if line.startswith('name:'):
+                        name = line.split('name:', 1)[1].strip().strip('"').strip("'")
+                    elif line.startswith('description:'):
+                        desc = line.split('description:', 1)[1].strip().strip('"').strip("'")
+                return name, desc
+        except Exception:
+            pass
+        return None, None
+
     def do_GET(self):
         # Strip query parameters for routing
         req_path = self.path.split("?")[0]
@@ -1056,6 +1074,71 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 self.wfile.write(b"File not found")
+        elif req_path == "/api/system/extensions":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.end_headers()
+            
+            config_path = pathlib.Path(__file__).parent / "extensions_config.json"
+            config = {}
+            if config_path.exists():
+                try:
+                    config = json.loads(config_path.read_text(encoding='utf-8'))
+                except Exception:
+                    pass
+            
+            extensions = []
+            
+            # 1. Scan Custom Skills
+            skills_dirs = [
+                pathlib.Path("/data/data/com.termux/files/home/.gemini/antigravity-cli/builtin/skills"),
+                pathlib.Path("/data/data/com.termux/files/home/.agents/skills")
+            ]
+            
+            for s_dir in skills_dirs:
+                if s_dir.exists():
+                    for child in s_dir.iterdir():
+                        if child.is_dir():
+                            skill_md = child / "SKILL.md"
+                            if skill_md.exists():
+                                name, desc = self._parse_skill_md(skill_md)
+                                if name:
+                                    s_id = child.name
+                                    extensions.append({
+                                        "id": s_id,
+                                        "name": name,
+                                        "type": "skill",
+                                        "description": desc or f"Custom agent skill from {s_id}",
+                                        "enabled": config.get(s_id, True),
+                                        "status": "active" if config.get(s_id, True) else "disabled",
+                                        "icon": "🧠"
+                                    })
+                                    
+            # 2. Add Plugins
+            plugins = [
+                {"id": "search", "name": "实时全网检索", "type": "plugin", "description": "允许 AI 自动使用 Python 脚本全网检索并总结。", "icon": "🔍"},
+                {"id": "bilibili", "name": "B站视频摘要", "type": "plugin", "description": "全自动解析视频弹幕及字幕并生成核心要点脑图。", "icon": "📺"},
+                {"id": "github", "name": "Github 架构师", "type": "plugin", "description": "一键克隆仓库，静态扫描并解答关于架构的问题。", "icon": "💻"}
+            ]
+            for p in plugins:
+                p_id = p["id"]
+                p["enabled"] = config.get(p_id, True)
+                p["status"] = "active" if config.get(p_id, True) else "disabled"
+                extensions.append(p)
+                
+            # 3. Add MCPs
+            mcps = [
+                {"id": "mcp-fs", "name": "Termux FileSystem (内网)", "type": "mcp", "description": "本地系统的底层文件管理器，提供 shell 命令执行与文件操作。", "icon": "📂"},
+                {"id": "mcp-web", "name": "Search & Web Scraper", "type": "mcp", "description": "网络检索端点，提供网页内容智能提取与分析接口。", "icon": "🌐"}
+            ]
+            for m in mcps:
+                m_id = m["id"]
+                m["enabled"] = config.get(m_id, True)
+                m["status"] = "online" if config.get(m_id, True) else "disabled"
+                extensions.append(m)
+                
+            self.wfile.write(json.dumps(extensions).encode('utf-8'))
         else:
             # Default fallback for other static assets
             super().do_GET()
@@ -1445,6 +1528,29 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     stop_ssh_tunnel()
                 self._send_json({"ok": True})
+            except Exception as e:
+                self._send_json({"error": str(e)}, 500)
+
+        elif self.path == "/api/system/extensions/toggle":
+            try:
+                req_json = json.loads(post_data.decode('utf-8'))
+                ext_id = req_json.get("id")
+                enabled = req_json.get("enabled", True)
+                
+                if ext_id:
+                    config_path = pathlib.Path(__file__).parent / "extensions_config.json"
+                    config = {}
+                    if config_path.exists():
+                        try:
+                            config = json.loads(config_path.read_text(encoding='utf-8'))
+                        except Exception:
+                            pass
+                    config[ext_id] = enabled
+                    config_path.write_text(json.dumps(config, indent=4), encoding='utf-8')
+                    
+                    self._send_json({"status": "success", "id": ext_id, "enabled": enabled})
+                else:
+                    self._send_json({"error": "id is required"}, 400)
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
 

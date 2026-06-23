@@ -2549,3 +2549,137 @@ body[data-terminal-theme="cyberpunk"] {
     transform: translateY(0);
 }
 
+/* Extension & Skill Card Styling */
+.extension-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+}
+.extension-card:hover {
+    border-color: rgba(6, 182, 212, 0.25);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, 0.08);
+    transform: translateY(-2px);
+}
+.extension-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.extension-title-block {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.extension-icon {
+    font-size: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 10px;
+}
+.extension-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.extension-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+.extension-type-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    width: fit-content;
+    text-transform: uppercase;
+}
+.extension-type-badge.skill {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--primary);
+}
+.extension-type-badge.mcp {
+    background: rgba(34, 211, 238, 0.15);
+    color: #22d3ee;
+}
+.extension-type-badge.plugin {
+    background: rgba(139, 92, 246, 0.15);
+    color: var(--secondary);
+}
+.extension-status-block {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.status-indicator {
+    font-size: 0.72rem;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+.status-indicator.active, .status-indicator.online {
+    color: var(--success);
+}
+.status-indicator.disabled {
+    color: var(--text-muted);
+}
+.extension-desc {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    padding-left: 2px;
+}
+
+/* Switch styling */
+.switch-container {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+}
+.switch-container input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.switch-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.switch-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+input:checked + .switch-slider {
+    background-color: var(--primary);
+}
+input:checked + .switch-slider:before {
+    transform: translateX(16px);
+}
+
