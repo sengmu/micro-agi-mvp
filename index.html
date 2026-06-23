@@ -17,7 +17,7 @@
     <script src="/pixi.min.js?v=5"></script>
     <script src="/live2dcubismcore.min.js?v=4"></script>
     <script src="/pixi-live2d-display.min.js?v=4"></script>
-    <link rel="stylesheet" href="/style.css?v=1.2.6">
+    <link rel="stylesheet" href="/style.css?v=1.2.7">
 </head>
 <body>
 
@@ -78,19 +78,18 @@
                 <!-- Starts empty for clean layout, welcome text popups on avatar head -->
             </div>
 
-            <!-- Suggestion quick chips -->
-            <div class="suggestions-container">
-                <div class="suggestion-chip" onclick="sendSuggestion('查看当前系统硬件配置')">🔍 查系统信息</div>
-                <div class="suggestion-chip" onclick="sendSuggestion('列出当前文件夹下的全部文件')">📂 看当前文件</div>
-                <div class="suggestion-chip" onclick="sendSuggestion('生成一个名叫 test_hello.txt 的文件并在里面写上 Hello World')">📝 写测试文件</div>
-                <div class="suggestion-chip" onclick="sendSuggestion('检查我的本地 IP 地址 and 网络状态')">🌐 查网络 IP</div>
-            </div>
-
             <!-- Terminal mini display -->
             <div class="quick-terminal" id="quickTerminal"></div>
 
         <!-- Input Area -->
         <div class="input-panel">
+            <!-- Suggestion quick chips -->
+            <div class="suggestions-container" style="padding: 0 4px; margin-bottom: 4px;">
+                <div class="suggestion-chip" onclick="sendSuggestion('查看当前系统硬件配置')">🔍 查系统信息</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('列出当前文件夹下的全部文件')">📂 看当前文件</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('生成一个名叫 test_hello.txt 的文件并在里面写上 Hello World')">📝 写测试文件</div>
+                <div class="suggestion-chip" onclick="sendSuggestion('检查我的本地 IP 地址 and 网络状态')">🌐 查网络 IP</div>
+            </div>
             <div id="attachments-preview" style="display: none; padding: 8px 12px; gap: 8px; flex-wrap: wrap; align-items: center; background: rgba(17, 24, 39, 0.6); border-radius: 16px; margin-bottom: 6px; border: 1px solid rgba(255,255,255,0.05); backdrop-filter: blur(10px);"></div>
             <div class="input-container">
                 <input type="file" id="file-upload" multiple style="display: none;" onchange="handleFileSelect(event)">
@@ -768,6 +767,6 @@
         </div>
     </div>
 
-    <script src="/script.js?v=1.2.4"></script>
+    <script src="/script.js?v=1.2.5"></script>
 </body>
 </html>

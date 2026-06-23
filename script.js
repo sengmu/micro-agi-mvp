@@ -2989,6 +2989,7 @@
         // Attach functions to window scope for immediate HTML inline onclick access
         window.checkSystemUpdate = checkSystemUpdate;
         window.triggerSystemUpdate = triggerSystemUpdate;
+        window.sendSuggestion = sendSuggestion;
 
         window.copyCodeBlock = function(btn) {
             const container = btn.closest('.code-block-container');
