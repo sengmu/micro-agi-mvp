@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Micro-AGI - 基于 Termux 的手机本地智能体控制中心</title>
+    <title>Micro-AGI - Local AGI Runtime on Termux</title>
     <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,16 +14,17 @@
     <header>
         <div class="container header-inner">
             <div class="logo">
-                <span>🧠</span> Micro-AGI
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                <span>Micro-AGI</span>
             </div>
             <ul class="nav-links">
-                <li><a href="#features">功能特性</a></li>
-                <li><a href="#architecture">架构设计</a></li>
-                <li><a href="#build">快捷部署</a></li>
+                <li><a href="#features">功能架构</a></li>
+                <li><a href="#architecture">集成原理</a></li>
+                <li><a href="#build">部署指南</a></li>
             </ul>
             <a href="https://github.com/sengmu/micro-agi-mvp" class="btn-header" target="_blank">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
-                GitHub 仓库
+                GitHub
             </a>
         </div>
     </header>
@@ -32,28 +33,30 @@
     <section class="hero">
         <div class="container hero-grid">
             <div class="hero-content">
-                <div class="hero-tag">
-                    <span>⚡</span> 离线化 AGI 独立 App
+                <div class="tech-badges">
+                    <span class="badge">Termux Native</span>
+                    <span class="badge">Python 3</span>
+                    <span class="badge">Live2D Core</span>
                 </div>
                 <h1 class="hero-title">
-                    让您的手机成为<br><span>最强的本地智能体终端</span>
+                    基于 Termux 的<br><span>本地化 AGI 运行沙箱</span>
                 </h1>
                 <p class="hero-desc">
-                    Micro-AGI MVP 是一个基于 Termux 的手机本地智能体控制中心。内置 Live2D 交互、独立的 AI 技能商店与 MCP 工具端点，支持离线语音唤醒，全屏运行于独立的 Android WebView 容器中。
+                    一个专为 Android 打造的轻量级本地智能体容器。通过在 Termux 中部署 Python 守护进程，配合原生 WebView 渲染层，实现离线唤醒、硬件 API 控制以及独立的扩展能力。
                 </p>
                 <div class="hero-actions">
                     <a href="#build" class="btn-primary">
-                        <span>🚀</span> 立即开始部署
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                        部署文档
                     </a>
                     <a href="http://localhost:8085" class="btn-secondary" target="_blank">
-                        <span>👁️</span> 进入控制中心
+                        打开本地服务
                     </a>
                 </div>
             </div>
             <div class="hero-showcase">
                 <div class="mockup-phone">
-                    <!-- Embedded generated high fidelity image mockup -->
-                    <img src="assets/app_mockup.jpg" alt="Micro-AGI App Mockup Screen">
+                    <img src="assets/app_mockup.jpg" alt="Micro-AGI App Interface">
                 </div>
             </div>
         </div>
@@ -63,32 +66,38 @@
     <section class="features" id="features">
         <div class="container">
             <div class="section-header">
-                <span class="section-tag">Powerful Features</span>
-                <h2 class="section-title">为本地智能体打造的完整生态</h2>
+                <span class="section-tag">Specifications</span>
+                <h2 class="section-title">模块化系统设计</h2>
             </div>
             <div class="feature-grid">
                 <!-- Feature 1 -->
                 <div class="feature-card">
-                    <div class="feature-icon">🌸</div>
-                    <h3 class="feature-title">Live2D 虚拟助手 (Hiyori)</h3>
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    </div>
+                    <h3 class="feature-title">Live2D 交互界面</h3>
                     <p class="feature-desc">
-                        内置 Hiyori 高清交互模型，支持全身骨骼动画、动作与物理效果反馈。结合语音交互功能，让您与 AI 智能体拥有真实、温馨的本地化交互窗口。
+                        前端集成 Live2D Cubism SDK，利用 WebGL 渲染本地 Hiyori 模型。支持物理效果反馈、表情切换及平滑的动作衔接，为本地 AGI 提供直观的可视化实体化交互。
                     </p>
                 </div>
                 <!-- Feature 2 -->
                 <div class="feature-card">
-                    <div class="feature-icon">🧠</div>
-                    <h3 class="feature-title">智能技能与工具商店</h3>
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"></rect><rect x="14" y="3" width="7" height="5" rx="1"></rect><rect x="14" y="12" width="7" height="9" rx="1"></rect><rect x="3" y="16" width="7" height="5" rx="1"></rect></svg>
+                    </div>
+                    <h3 class="feature-title">解耦式扩展商店</h3>
                     <p class="feature-desc">
-                        脱离杂乱的控制台选项，全新改版为独立的底部滑出式 Skill Market 面板。支持 AI 智能工作流（Workflow Skills）与 MCP 工具端点的全局搜索与管理。
+                        独立的底部抽屉式（Drawer）扩展管理面板。实现 AI 智能工作流（Workflow Skills）与标准 MCP 协议端点（Model Context Protocol）的模块化配置与运行时加载。
                     </p>
                 </div>
                 <!-- Feature 3 -->
                 <div class="feature-card">
-                    <div class="feature-icon">🔌</div>
-                    <h3 class="feature-title">手机本地硬件控制</h3>
+                    <div class="feature-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                    </div>
+                    <h3 class="feature-title">系统硬件级控制</h3>
                     <p class="feature-desc">
-                        深度调用 Termux-API，允许智能体底层掌控手电筒、高频震动、系统剪贴板实时双向同步以及电池温度与电量健康检查。
+                        基于 Termux-API 实现与系统硬件的深度绑定。智能体可直接控制手电筒开关、震动马达反馈、读取电量温度状态，并实现手机剪贴板的实时双向读写同步。
                     </p>
                 </div>
             </div>
@@ -99,51 +108,55 @@
     <section class="architecture" id="architecture">
         <div class="container">
             <div class="section-header">
-                <span class="section-tag">Architecture</span>
-                <h2 class="section-title">独立的 Android APK 整合设计</h2>
+                <span class="section-tag">Under the Hood</span>
+                <h2 class="section-title">安卓端混合编译架构</h2>
             </div>
             <div class="arch-box">
                 <div class="arch-info">
-                    <h3>打包在 Termux 里的独立 App</h3>
-                    <p>我们对开源的 <code>termux-app</code> 底层 Java 进行了深度改造，将其与 AGI 控制中心进行完美整合：</p>
+                    <h3>APK 内部封装与初始化机制</h3>
+                    <p>项目通过对官方 <code>termux-app</code> 的原生 Java 代码进行改造，实现应用层与终端后台的透明集成：</p>
                     <ul class="arch-steps">
                         <li>
                             <div class="step-num">1</div>
                             <div class="step-text">
-                                <strong>本地免联网全量解压</strong>
-                                <span>工程的 Assets 目录中已全量内置 3.2MB 的 AGI 核心代码与 Live2D 模型包。安装 APK 后，首启时本地自动解压到手机根目录，无网络也能开箱即用。</span>
+                                <strong>免部署内置资源释放</strong>
+                                <span>打包时，AGI 源码及模型文件会被压缩为 <code>micro-agi-mvp.zip</code> 存放在 App 的 Assets 目录中。首启时由 Java 自动解压至终端运行目录，无需手动拉取。</span>
                             </div>
                         </li>
                         <li>
                             <div class="step-num">2</div>
                             <div class="step-text">
-                                <strong>自动国内源配置与优化</strong>
-                                <span>考虑到国内用户访问慢、易失败，首启脚本将非交互地一键把软件包管理器更换为<b>清华大学 apt 镜像源</b>与 <b>清华 PyPI 镜像源</b>，安装速度提升百倍。</span>
+                                <strong>自动化国内镜像重定向</strong>
+                                <span>针对中国用户自动将默认包管理器仓库源（APT）以及 Python Pip 源重定向至清华大学（Tsinghua）镜像站，实现离线依赖安装加速。</span>
                             </div>
                         </li>
                         <li>
                             <div class="step-num">3</div>
                             <div class="step-text">
-                                <strong>双 Tmux 静默后台守护</strong>
-                                <span>在手机后台静默拉起 Python 主服务器（port 8085）与基于 SpeechRecognition 的语音唤醒服务进程，随时听候您的唤醒指令。</span>
+                                <strong>多 Tmux 守护进程并发</strong>
+                                <span>Java 启动生命周期中静默拉起 Tmux 服务会话，以多线程并发运行 Python 任务处理服务器与基于 SpeechRecognition 的低功耗语音唤醒进程。</span>
                             </div>
                         </li>
                     </ul>
                 </div>
                 <div class="arch-diagram">
                     <div class="diag-node primary">
-                        <h4>📱 独立 Android APK 运行壳</h4>
-                        <small>Native JVM + 全屏嵌入式 WebView</small>
+                        <h4>Android JVM Wrapper</h4>
+                        <small>Native View + Fullscreen Webkit</small>
                     </div>
-                    <div class="diag-arrow">⬇️ WebView 自动载入 localhost:8085</div>
+                    <div class="diag-arrow">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                    </div>
                     <div class="diag-node secondary">
-                        <h4>⚙️ 后台 Termux 终端引擎</h4>
-                        <small>自动释放 micro-agi-mvp 运行代码与模型</small>
+                        <h4>Termux Service Backend</h4>
+                        <small>Auto Extraction & Environment Bootstrap</small>
                     </div>
-                    <div class="diag-arrow">⬇️ Tmux 静默并发拉起服务</div>
+                    <div class="diag-arrow">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                    </div>
                     <div class="diag-node">
-                        <h4>🚀 Python API 核心服务器 & 语音唤醒守护进程</h4>
-                        <small>执行本地 AGI 任务、控制系统硬件、读取技能</small>
+                        <h4>Runtime Servers (Tmux)</h4>
+                        <small>Python Web App (Port 8085) & Voice Wake Daemon</small>
                     </div>
                 </div>
             </div>
@@ -154,8 +167,8 @@
     <section class="build" id="build">
         <div class="container">
             <div class="section-header">
-                <span class="section-tag">Get Started</span>
-                <h2 class="section-title">只需三步，快速部署</h2>
+                <span class="section-tag">Quick Start</span>
+                <h2 class="section-title">终端快速启动</h2>
             </div>
             
             <div class="terminal-mockup">
@@ -202,7 +215,7 @@
             </div>
             <div class="footer-links">
                 <a href="https://github.com/sengmu/micro-agi-mvp" target="_blank">GitHub</a>
-                <a href="http://localhost:8085" target="_blank">本地控制台</a>
+                <a href="http://localhost:8085" target="_blank">Localhost Console</a>
             </div>
         </div>
     </footer>
