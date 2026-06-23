@@ -3311,7 +3311,12 @@
             }
             
             container.innerHTML = '';
-            activeExts.forEach(ext => {
+            
+            // Limit to top 4 active skills to prevent overflowing screen
+            const displayLimit = 4;
+            const toDisplay = activeExts.slice(0, displayLimit);
+            
+            toDisplay.forEach(ext => {
                 const chip = document.createElement('button');
                 chip.className = 'suggestion-chip';
                 chip.style.marginRight = '8px';
@@ -3332,6 +3337,15 @@
                 };
                 container.appendChild(chip);
             });
+            
+            // Add trailing expand button
+            const moreBtn = document.createElement('button');
+            moreBtn.className = 'suggestion-chip more-skills-pulsate-btn';
+            moreBtn.innerHTML = `✨ 更多...`;
+            moreBtn.onclick = () => {
+                toggleStore();
+            };
+            container.appendChild(moreBtn);
         }
 
         function restoreDefaultChips() {
