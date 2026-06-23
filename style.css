@@ -2222,7 +2222,7 @@
 .chat-area::after {
     content: "";
     display: block;
-    min-height: 160px;
+    min-height: 120px;
     flex-shrink: 0;
 }
 
