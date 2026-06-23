@@ -1,4 +1,4 @@
-const CACHE_NAME = 'micro-agi-cache-v9';
+const CACHE_NAME = 'micro-agi-cache-v10';
 const ASSETS = [
     '/',
     '/index.html',

@@ -2608,11 +2608,9 @@
             if (drawer.classList.contains('active')) {
                 overlay.classList.remove('active');
                 drawer.classList.remove('active');
-                drawer.style.display = 'none';
             } else {
                 overlay.classList.add('active');
                 drawer.classList.add('active');
-                drawer.style.display = 'flex';
                 
                 loadExtensions();
                 refreshHardwareBattery();
