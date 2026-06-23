@@ -38,6 +38,7 @@ public class TermuxActivity extends Activity implements ServiceConnection {
         setupWebView();
         checkPermissions();
         extractAgiAssetsIfNeeded();
+        appendStartupToBashrc();
 
         // Bind Termux background service to run python and command terminal backend
         Intent serviceIntent = new Intent(this, TermuxService.class);
@@ -57,6 +58,50 @@ public class TermuxActivity extends Activity implements ServiceConnection {
             } catch (java.io.IOException e) {
                 android.util.Log.e("TermuxActivity", "Failed to extract assets", e);
             }
+        }
+    }
+
+    private void appendStartupToBashrc() {
+        java.io.File bashrc = new java.io.File("/data/data/com.termux/files/home/.bashrc");
+        try {
+            java.io.File parent = bashrc.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+
+            boolean alreadyConfigured = false;
+            if (bashrc.exists()) {
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(bashrc));
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("micro-agi-mvp")) {
+                        alreadyConfigured = true;
+                        break;
+                    }
+                }
+                reader.close();
+            }
+
+            if (!alreadyConfigured) {
+                java.io.FileWriter writer = new java.io.FileWriter(bashrc, true); // Append mode
+                writer.write("\n# Micro-AGI MVP Auto-Start Configuration\n");
+                writer.write("if [ ! -f ~/.bootstrapped ]; then\n");
+                writer.write("    echo \"⚙️ 正在首次配置国内清华大学镜像源...\"\n");
+                writer.write("    sed -i 's|packages.termux.org|mirrors.tuna.tsinghua.edu.cn/termux|g' /data/data/com.termux/files/usr/etc/apt/sources.list\n");
+                writer.write("    sed -i 's|packages.termux.dev|mirrors.tuna.tsinghua.edu.cn/termux|g' /data/data/com.termux/files/usr/etc/apt/sources.list\n");
+                writer.write("    pkg update -y\n");
+                writer.write("    pkg install -y python ffmpeg termux-api git tmux\n");
+                writer.write("    pip install -i https://pypi.tuna.tsinghua.edu.cn/simple speechrecognition requests\n");
+                writer.write("    touch ~/.bootstrapped\n");
+                writer.write("fi\n\n");
+                writer.write("cd /data/data/com.termux/files/home/micro-agi-mvp\n");
+                writer.write("tmux has-session -t micro-agi 2>/dev/null || tmux new-session -d -s micro-agi \"bash start_service.sh\"\n");
+                writer.write("tmux has-session -t micro-agi-wake 2>/dev/null || tmux new-session -d -s micro-agi-wake \"python wake_word_daemon.py\"\n");
+                writer.close();
+                android.util.Log.d("TermuxActivity", "Added startup configuration to .bashrc");
+            }
+        } catch (java.io.IOException e) {
+            android.util.Log.e("TermuxActivity", "Failed to write .bashrc", e);
         }
     }
 

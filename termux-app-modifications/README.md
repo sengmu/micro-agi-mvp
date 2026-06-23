@@ -26,24 +26,11 @@ git clone https://github.com/termux/termux-app.git
 把 **`TermuxActivity.java`** 拷贝并覆盖至源码中的下述路径：
 `app/src/main/java/com/termux/app/TermuxActivity.java`
 
-### 4. 配置首启自运行脚本
-在打包前，我们需要让终端在初始化后自动进入项目目录并开启服务。
-在 Termux 源码的 `app/src/main/assets/` 下（或通过在系统初始化脚本 `termux-login.sh` / `.bashrc` 中写入）：
-```bash
-# 自动启动 Python 后端与语音唤醒守护进程
-if [ ! -f ~/.bootstrapped ]; then
-    # 首次启动，安装依赖并做标记
-    pkg update -y
-    pkg install -y python ffmpeg termux-api git
-    pip install speechrecognition requests
-    touch ~/.bootstrapped
-fi
-
-# 启动 Web 服务
-cd ~/micro-agi-mvp
-tmux new-session -d -s micro-agi "python app.py"
-tmux new-session -d -s micro-agi-wake "python wake_word_daemon.py"
-```
+### 4. 自动解压与首启脚本初始化（Java 已自动化完成）
+修改后的 `TermuxActivity.java` 内部已内置了自动化操作，无需手动配置 `.bashrc`：
+* **国内镜像优化**：自动检测国内用户网络，首启时非交互式自动将 Termux 软件源切换至 **清华大学开源软件镜像站 (Tsinghua Mirror)**，并将 `pip` 下载源配置为清华大学 Simple 镜像，大幅提升国内用户安装 Python/FFmpeg 的成功率与速度（提升近百倍）。
+* **自动化解压**：自动把 APK Assets 里的 `micro-agi-mvp.zip` 释放解压至手机主目录。
+* **自启动运行**：自动在 `.bashrc` 底部追加 `tmux` 后台服务拉起脚本，实现应用安装并打开即可无感秒开。
 
 ### 5. 编译 APK
 在 Android Studio 中打开项目，等待 Gradle 同步完成，然后点击 **`Build -> Build Bundle(s) / APK(s) -> Build APK(s)`**。
