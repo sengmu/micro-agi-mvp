@@ -769,23 +769,23 @@
             gap: 16px;
         }
 
-        /* Left Menu Drawer Styles */
+        /* Right Menu Drawer Styles */
         #more-menu-drawer {
             position: fixed;
             top: 0;
-            left: 0;
+            right: 0;
             width: min(300px, 80vw);
             height: 100vh;
             height: 100dvh;
             background: rgba(11, 15, 25, 0.85);
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
             z-index: 100;
             display: none;
             flex-direction: column;
-            box-shadow: 10px 0 30px rgba(0, 0, 0, 0.4);
-            transform: translateX(-100%);
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.4);
+            transform: translateX(100%);
             transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
 
@@ -1938,6 +1938,29 @@
         .left-drawer.open {
             transform: translateX(0);
         }
+
+        /* Right Drawer styles override */
+        .right-drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: min(300px, 85vw);
+            height: 100vh;
+            height: 100dvh;
+            background: rgba(11, 15, 25, 0.88);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-left: 1px solid rgba(255, 255, 255, 0.08);
+            z-index: 210;
+            display: none;
+            flex-direction: column;
+            box-shadow: -10px 0 30px rgba(0, 0, 0, 0.4);
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+        .right-drawer.open {
+            transform: translateX(0);
+        }
         
         /* Chat History list styling */
         .history-item {
@@ -2495,5 +2518,32 @@ body[data-terminal-theme="cyberpunk"] {
     background: rgba(236, 72, 153, 0.15) !important;
     border-color: rgba(236, 72, 153, 0.5) !important;
     color: #f472b6 !important;
+}
+
+/* Copy button styling in code blocks and terminal headers */
+.code-block-copy-btn, .term-copy-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--term-cmd-text) !important;
+    font-size: 0.65rem;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none;
+}
+
+.code-block-copy-btn:hover, .term-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+.code-block-copy-btn:active, .term-copy-btn:active {
+    transform: translateY(0);
 }
 

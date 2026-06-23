@@ -832,7 +832,7 @@
                     <div class="code-block-container" style="margin: 12px 0; border-radius: 8px; border: 1px solid var(--term-border); overflow: hidden; background: var(--term-bg); box-shadow: var(--term-glow);">
                         <div class="code-block-header" style="background: var(--term-header-bg); padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--term-border); user-select: none;">
                             <span class="code-block-lang" style="font-size: 0.65rem; color: var(--term-text); font-weight: bold; text-transform: uppercase;">${lang || 'text'}</span>
-                            <button class="code-block-copy-btn" onclick="copyCodeBlock(this)" style="background: none; border: none; color: var(--term-cmd-text); font-size: 0.65rem; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.2s; display: flex; align-items: center; gap: 4px;">
+                            <button class="code-block-copy-btn" onclick="copyCodeBlock(this)">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                                 复制
                             </button>
@@ -855,7 +855,7 @@
                     <div class="code-block-container" style="margin: 12px 0; border-radius: 8px; border: 1px solid var(--term-border); overflow: hidden; background: var(--term-bg); box-shadow: var(--term-glow);">
                         <div class="code-block-header" style="background: var(--term-header-bg); padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--term-border); user-select: none;">
                             <span class="code-block-lang" style="font-size: 0.65rem; color: var(--term-text); font-weight: bold; text-transform: uppercase;">text</span>
-                            <button class="code-block-copy-btn" onclick="copyCodeBlock(this)" style="background: none; border: none; color: var(--term-cmd-text); font-size: 0.65rem; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.2s; display: flex; align-items: center; gap: 4px;">
+                            <button class="code-block-copy-btn" onclick="copyCodeBlock(this)">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                                 复制
                             </button>
@@ -885,7 +885,7 @@
                             <div style="font-size: 0.75rem; color: var(--term-text); font-family: 'Consolas', 'Monaco', monospace; flex-grow: 1; text-align: center; letter-spacing: 0.5px;">TERMINAL EXECUTION</div>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 0.7rem; color: ${statusColor}; font-weight: 700; letter-spacing: 0.5px;">${statusText}</span>
-                                <button class="term-copy-btn" onclick="event.stopPropagation(); copyTerminalOutput(this, '${stepId}')" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px 6px; color: var(--term-text); font-size: 0.62rem; cursor: pointer; font-weight: bold; transition: all 0.2s;">
+                                <button class="term-copy-btn" onclick="event.stopPropagation(); copyTerminalOutput(this, '${stepId}')">
                                     复制结果
                                 </button>
                             </div>
