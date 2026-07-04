@@ -1241,8 +1241,9 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
         elif req_path == "/api/system/google_status":
-            token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN", "")
-            refresh_token = ENV_VARS.get("GOOGLE_REFRESH_TOKEN", "")
+            global ENV_VARS
+            ENV_VARS = load_env()
+            llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
             gemini_key = ENV_VARS.get("GEMINI_API_KEY", "")
             
             ai_url = ENV_VARS.get("AI_URL", "")
@@ -1250,15 +1251,49 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             ai_model = ENV_VARS.get("AI_MODEL", "")
             
             status = "disconnected"
-            if token or refresh_token:
-                status = "connected"
-                
+            
+            if llm_backend == "agy":
+                termux_home = "/data/data/com.termux/files/home"
+                termux_usr = "/data/data/com.termux/files/usr"
+                is_termux = os.path.exists("/data/data/com.termux")
+                if is_termux:
+                    cmd_str = (
+                        "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
+                        f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
+                        f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
+                        f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                        f"-b {termux_home}/.local/glibc:/lib "
+                        f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy status"
+                    )
+                    env = os.environ.copy()
+                    env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+                    env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+                    env["PYTHONHOME"] = termux_usr
+                    env["HOME"] = termux_home
+                else:
+                    cmd_str = "agy status"
+                    env = os.environ.copy()
+                    
+                try:
+                    res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, env=env, timeout=5)
+                    output = res.stdout.strip()
+                    if res.returncode == 0 and "not signed in" not in output:
+                        status = "connected"
+                except:
+                    pass
+            else:
+                token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN", "")
+                refresh_token = ENV_VARS.get("GOOGLE_REFRESH_TOKEN", "")
+                if token or refresh_token:
+                    status = "connected"
+                    
             self._send_json({
                 "status": status,
                 "gemini_key": gemini_key,
                 "ai_url": ai_url,
                 "ai_key": ai_key,
-                "ai_model": ai_model
+                "ai_model": ai_model,
+                "llm_backend": llm_backend
             })
 
         # --- DB Artifacts API GET routes ---
@@ -1898,8 +1933,16 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
 
         elif self.path == "/api/system/auth/init":
             try:
-                if active_auth_process and active_auth_process.poll() is None:
-                    active_auth_process.terminate()
+                import pty
+                if active_auth_process:
+                    try:
+                        os.close(active_auth_process[0])
+                    except:
+                        pass
+                    try:
+                        active_auth_process[1].terminate()
+                    except:
+                        pass
                     active_auth_process = None
                 
                 termux_home = "/data/data/com.termux/files/home"
@@ -1921,44 +1964,51 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 env["PYTHONHOME"] = termux_usr
                 env["HOME"] = termux_home
                 
-                active_auth_process = subprocess.Popen(
+                master_fd, slave_fd = pty.openpty()
+                proc = subprocess.Popen(
                     cmd_str,
                     shell=True,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    close_fds=True,
                     env=env
                 )
+                os.close(slave_fd)
                 
-                active_auth_process.stdin.write("1\n")
-                active_auth_process.stdin.flush()
+                active_auth_process = (master_fd, proc)
+                
+                time.sleep(0.5)
+                os.write(master_fd, b"1\n")
                 
                 auth_url = ""
-                timeout_limit = time.time() + 15
+                timeout_limit = time.time() + 10
+                buffer = ""
                 while time.time() < timeout_limit:
-                    line = active_auth_process.stdout.readline()
-                    if not line:
-                        break
-                    print(f"[AuthInit] Stdout: {line.strip()}")
-                    if "https://" in line and "google" in line:
-                        urls = re.findall(r'https://\S+', line)
-                        if urls:
-                            auth_url = urls[0]
+                    try:
+                        r = os.read(master_fd, 1024).decode('utf-8', errors='ignore')
+                        if not r:
                             break
-                            
+                        buffer += r
+                        if "https://" in buffer:
+                            urls = re.findall(r'https://\S+', buffer)
+                            if urls:
+                                auth_url = urls[0]
+                                break
+                    except OSError:
+                        break
+                        
                 if auth_url:
                     self._send_json({"ok": True, "url": auth_url})
                 else:
-                    self._send_json({"ok": False, "message": "Failed to retrieve OAuth URL. Please check Termux network connection."})
+                    self._send_json({"ok": False, "message": "Failed to retrieve OAuth URL from TTY buffer."})
             except Exception as e:
                 traceback.print_exc()
                 self._send_json({"ok": False, "message": str(e)}, 500)
 
         elif self.path == "/api/system/auth/confirm":
             try:
-                if not active_auth_process or active_auth_process.poll() is not None:
+                if not active_auth_process:
                     self._send_json({"ok": False, "message": "No active authorization session. Please initialize again."})
                     return
                     
@@ -1968,18 +2018,22 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     self._send_json({"ok": False, "message": "Verification code is empty"})
                     return
                     
-                active_auth_process.stdin.write(f"{code}\n")
-                active_auth_process.stdin.flush()
+                master_fd, proc = active_auth_process
+                os.write(master_fd, f"{code}\n".encode('utf-8'))
                 
                 time.sleep(3)
                 
-                if active_auth_process.poll() is not None:
-                    active_auth_process = None
-                    self._send_json({"ok": True, "message": "Authorization successful! You can now run antigravity."})
-                else:
-                    self._send_json({"ok": True, "message": "Credentials submitted. Verify terminal commands now."})
-                    active_auth_process.terminate()
-                    active_auth_process = None
+                try:
+                    os.close(master_fd)
+                except:
+                    pass
+                try:
+                    proc.terminate()
+                except:
+                    pass
+                active_auth_process = None
+                
+                self._send_json({"ok": True, "message": "Google Credentials submitted to agy client successfully!"})
             except Exception as e:
                 traceback.print_exc()
                 self._send_json({"ok": False, "message": str(e)}, 500)

@@ -3481,6 +3481,7 @@
         });
 
         // --- Google Login & API Configuration Helpers ---
+        // --- Google Login & API Configuration Helpers ---
         async function updateGoogleLoginStatus() {
             try {
                 const response = await fetch("/api/system/google_status");
@@ -3488,33 +3489,44 @@
                 const data = await response.json();
                 
                 const statusEl = document.getElementById("google-login-status");
-                const sectionEl = document.getElementById("google-login-section");
+                const authBtn = document.getElementById("google-settings-auth-btn");
+                const authZone = document.getElementById("google-settings-auth-input-zone");
                 const keyInput = document.getElementById("custom-gemini-key");
                 
                 if (data.gemini_key) {
                     keyInput.value = data.gemini_key;
                 }
                 
+                const isAgy = data.llm_backend === "agy";
+                
                 if (data.status === "connected") {
-                    if (statusEl) statusEl.innerHTML = '<span style="color: #34a853; font-weight: bold;">已关联 Google</span>';
-                    if (sectionEl) {
-                        sectionEl.innerHTML = `
-                            <button onclick="triggerGoogleLogout()" class="suggestion-chip" style="margin: 0; width: 100%; height: 34px; font-size: 0.72rem; border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.1); color: var(--error); display: flex; justify-content: center; align-items: center; gap: 6px; cursor: pointer; border-radius: 6px;">
-                                🔓 断开 Google 账号关联
-                            </button>
-                            <span style="font-size: 0.6rem; color: var(--text-muted); text-align: center;">您已成功登录 Google，系统会自动刷新并使用官方配额调用 Gemini。</span>
-                        `;
+                    if (statusEl) {
+                        statusEl.innerHTML = isAgy 
+                            ? '<span style="color: #34a853; font-weight: bold;">🟢 已绑定 Antigravity (agy)</span>'
+                            : '<span style="color: #34a853; font-weight: bold;">已关联 Google</span>';
+                    }
+                    if (authBtn) {
+                        authBtn.innerHTML = isAgy ? "🔄 重新登录绑定 (Antigravity CLI)" : "🔓 断开 Google 账号关联";
+                        authBtn.style.background = isAgy ? "rgba(255,255,255,0.05)" : "rgba(239, 68, 68, 0.1)";
+                        authBtn.style.color = isAgy ? "#fff" : "var(--error)";
+                        authBtn.style.borderColor = isAgy ? "rgba(255,255,255,0.1)" : "rgba(239, 68, 68, 0.3)";
+                        authBtn.onclick = isAgy ? triggerGoogleLogin : triggerGoogleLogout;
                     }
                 } else {
-                    if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444; font-weight: bold;">未关联</span>';
-                    if (sectionEl) {
-                        sectionEl.innerHTML = `
-                            <button onclick="triggerGoogleLogin()" class="suggestion-chip" style="margin: 0; width: 100%; height: 34px; font-size: 0.72rem; font-weight: bold; border: 1px solid rgba(66, 133, 244, 0.4); background: rgba(66, 133, 244, 0.15); color: #8ab4f8; display: flex; justify-content: center; align-items: center; gap: 6px; cursor: pointer; border-radius: 6px;">
-                                <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.986 0-.74-.08-1.305-.18-1.86H12.24z"/></svg>
-                                关联 Google 账号登录 (免 Key)
-                            </button>
-                            <span style="font-size: 0.6rem; color: var(--text-muted); text-align: center;">像 Antigravity 一样直接登录谷歌账号，免费调用官方 Gemini</span>
+                    if (statusEl) {
+                        statusEl.innerHTML = isAgy 
+                            ? '<span style="color: #ef4444; font-weight: bold;">🔴 未关联 (Antigravity CLI)</span>'
+                            : '<span style="color: #ef4444; font-weight: bold;">未关联</span>';
+                    }
+                    if (authBtn) {
+                        authBtn.innerHTML = `
+                            <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.986 0-.74-.08-1.305-.18-1.86H12.24z"/></svg>
+                            关联 Google 账号登录 (免 Key)
                         `;
+                        authBtn.style.background = "rgba(66, 133, 244, 0.15)";
+                        authBtn.style.color = "#8ab4f8";
+                        authBtn.style.borderColor = "rgba(66, 133, 244, 0.4)";
+                        authBtn.onclick = triggerGoogleLogin;
                     }
                 }
             } catch (err) {
@@ -3522,8 +3534,75 @@
             }
         }
 
-        function triggerGoogleLogin() {
-            window.open("/google_login", "_blank", "width=500,height=600,location=no,menubar=no,status=no");
+        async function triggerGoogleLogin() {
+            const btn = document.getElementById('google-settings-auth-btn');
+            const zone = document.getElementById('google-settings-auth-input-zone');
+            if (!btn || !zone) return;
+            
+            try {
+                const checkRes = await fetch("/api/system/google_status");
+                const checkData = await checkRes.json();
+                if (checkData.llm_backend !== "agy") {
+                    window.open("/google_login", "_blank", "width=500,height=600,location=no,menubar=no,status=no");
+                    return;
+                }
+            } catch(e) {}
+            
+            btn.innerText = "正在拉起授权...";
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/system/auth/init', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.ok && data.url) {
+                    btn.innerText = "请在浏览器中登录";
+                    zone.style.display = "flex";
+                    window.location.href = data.url;
+                } else {
+                    btn.innerText = "获取失败，重试";
+                    btn.disabled = false;
+                    alert("错误: " + (data.message || "无法拉起 OAuth 链接"));
+                }
+            } catch (e) {
+                btn.innerText = "连接失败，重试";
+                btn.disabled = false;
+                alert("连接服务失败: " + e.message);
+            }
+        }
+
+        async function submitGoogleAuthCode() {
+            const input = document.getElementById('google-settings-auth-code');
+            const zone = document.getElementById('google-settings-auth-input-zone');
+            const btn = document.getElementById('google-settings-auth-btn');
+            if (!input || !zone || !btn) return;
+            
+            const code = input.value.trim();
+            if (!code) {
+                alert("请输入您获取到的验证 Code！");
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/system/auth/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await response.json();
+                
+                if (data.ok) {
+                    alert("🔑 恭喜，Google 账号在手机本地的 Antigravity CLI (agy) 下已成功授权绑定！");
+                    zone.style.display = "none";
+                    input.value = "";
+                    btn.disabled = false;
+                    updateGoogleLoginStatus();
+                } else {
+                    alert("绑定失败: " + data.message);
+                }
+            } catch (e) {
+                alert("提交 Code 失败: " + e.message);
+            }
         }
 
         async function triggerGoogleLogout() {
