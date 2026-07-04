@@ -3767,7 +3767,7 @@
                 if (data.ok && data.url) {
                     btn.innerText = "请在浏览器中登录";
                     zone.style.display = "flex";
-                    window.open(data.url, '_blank');
+                    window.location.href = data.url;
                 } else {
                     btn.innerText = "获取失败，重试";
                     btn.disabled = false;

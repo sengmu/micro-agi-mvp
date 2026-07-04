@@ -1462,6 +1462,7 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        global active_auth_process
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
         
@@ -1829,7 +1830,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"stdout": "", "stderr": f"Error executing command: {str(e)}"}, 500)
 
         elif self.path == "/api/system/auth/init":
-            global active_auth_process
             try:
                 if active_auth_process and active_auth_process.poll() is None:
                     active_auth_process.terminate()
@@ -1890,7 +1890,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"ok": False, "message": str(e)}, 500)
 
         elif self.path == "/api/system/auth/confirm":
-            global active_auth_process
             try:
                 if not active_auth_process or active_auth_process.poll() is not None:
                     self._send_json({"ok": False, "message": "No active authorization session. Please initialize again."})
@@ -1942,7 +1941,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     self._send_json({"ok": True})
                     import threading
                     import sys
-                    import time
                     def exit_later():
                         time.sleep(1)
                         print("Updating server... exiting now to trigger auto-restart wrapper script.")
@@ -2126,6 +2124,7 @@ threading.Thread(target=battery_monitor_daemon, daemon=True).start()
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
+    allow_reuse_address = True
 
 def run_server():
     server_address = ('', PORT)
