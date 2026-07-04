@@ -1781,6 +1781,31 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
 
+        elif self.path == "/api/system/command":
+            try:
+                req_json = json.loads(post_data.decode('utf-8'))
+                cmd = req_json.get("cmd", "")
+                if not cmd:
+                    self._send_json({"stdout": "", "stderr": "Error: Empty command"})
+                else:
+                    env = os.environ.copy()
+                    termux_usr = "/data/data/com.termux/files/usr"
+                    env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+                    env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+                    env["PYTHONHOME"] = termux_usr
+                    env["HOME"] = "/data/data/com.termux/files/home"
+                    env["SHELL"] = termux_usr + "/bin/sh"
+                    
+                    res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, env=env)
+                    self._send_json({
+                        "stdout": res.stdout,
+                        "stderr": res.stderr
+                    })
+            except subprocess.TimeoutExpired:
+                self._send_json({"stdout": "", "stderr": "Error: Command timed out after 30 seconds."})
+            except Exception as e:
+                self._send_json({"stdout": "", "stderr": f"Error executing command: {str(e)}"}, 500)
+
         elif self.path == "/api/hardware/clipboard":
             try:
                 req_json = json.loads(post_data.decode('utf-8'))
