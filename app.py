@@ -1920,7 +1920,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
 
         elif self.path == "/api/system/auth/init":
             try:
-                global active_auth_process
                 # 清理旧的认证进程
                 if active_auth_process:
                     try:
@@ -2022,7 +2021,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     self._send_json({"ok": False, "message": "Verification code is empty"})
                     return
                 
-                global active_auth_process
                 if not active_auth_process or not active_auth_process[1]:
                     self._send_json({"ok": False, "message": "Authentication session not found or expired. Please click 'Connect Google Drive' again."})
                     return
