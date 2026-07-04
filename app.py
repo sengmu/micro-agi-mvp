@@ -1991,6 +1991,22 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                         break
                         
                 if auth_url:
+                    # 启动后台线程持续排空 stdout 和 stderr，防止 pipe 缓冲区打满导致死锁
+                    import threading
+                    def drain_stream(stream):
+                        try:
+                            while True:
+                                r = stream.read1(4096) if hasattr(stream, 'read1') else stream.read(4096)
+                                if not r:
+                                    break
+                        except Exception:
+                            pass
+                    
+                    if proc.stdout:
+                        threading.Thread(target=drain_stream, args=(proc.stdout,), daemon=True).start()
+                    if proc.stderr:
+                        threading.Thread(target=drain_stream, args=(proc.stderr,), daemon=True).start()
+
                     self._send_json({"ok": True, "url": auth_url})
                 else:
                     self._send_json({"ok": False, "message": f"Failed to retrieve OAuth URL. Output: {buffer[:200]}"})
