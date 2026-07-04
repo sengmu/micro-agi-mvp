@@ -1050,6 +1050,7 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
         return None, None
 
     def do_GET(self):
+        global ENV_VARS
         # Strip query parameters for routing
         req_path = self.path.split("?")[0]
         
@@ -1241,7 +1242,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
         elif req_path == "/api/system/google_status":
-            global ENV_VARS
             ENV_VARS = load_env()
             llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
             gemini_key = ENV_VARS.get("GEMINI_API_KEY", "")
