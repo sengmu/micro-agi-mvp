@@ -418,8 +418,8 @@
                             
                             <!-- Hidden Auth Code input container -->
                             <div id="google-settings-auth-input-zone" style="display: none; align-items: center; gap: 6px; margin-top: 4px;">
-                                <input type="text" id="google-settings-auth-code" placeholder="请粘贴授权 Code..." style="flex: 1; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 6px 8px; color: #fff; font-size: 0.68rem; font-family: monospace; outline: none; height: 28px;">
-                                <button onclick="submitGoogleAuthCode()" style="background: #38bdf8; color: #000; border: none; border-radius: 4px; padding: 4px 10px; font-size: 0.68rem; font-weight: bold; cursor: pointer; height: 28px;">提交</button>
+                                <input type="text" id="google-settings-auth-code" onkeydown="if(event.keyCode==13){submitGoogleAuthCode(); return false;}" placeholder="请粘贴授权 Code..." style="flex: 1; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 6px 8px; color: #fff; font-size: 0.68rem; font-family: monospace; outline: none; height: 28px;">
+                                <button type="button" onclick="submitGoogleAuthCode(); return false;" style="background: #38bdf8; color: #000; border: none; border-radius: 4px; padding: 4px 10px; font-size: 0.68rem; font-weight: bold; cursor: pointer; height: 28px;">提交</button>
                             </div>
                         </div>
                         

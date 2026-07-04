@@ -106,7 +106,7 @@ def call_llm(messages: list) -> str:
     ENV_VARS = load_env() # Ensure latest config is read
     
     # 支持本地自定义 Antigravity CLI (agy) 大模型引擎后端
-    llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
+    llm_backend = ENV_VARS.get("LLM_BACKEND", "agy").lower()
     
     if llm_backend == "agy":
         user_prompt = ""
@@ -127,17 +127,19 @@ def call_llm(messages: list) -> str:
         termux_usr = "/data/data/com.termux/files/usr"
         escaped_prompt = user_prompt.replace("'", "'\\''")
         is_termux = os.path.exists("/data/data/com.termux")
-        
         if is_termux:
-            cmd_str = (
+            # 用 script -qc 包裹 agy 调用，为 bubbletea 框架提供 PTY 环境
+            agy_inner = (
                 "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
                 f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
                 f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
                 f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                f"-b {termux_home} "
                 f"-b {termux_home}/.local/glibc:/lib "
                 f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy "
                 f"--prompt '{escaped_prompt}'"
             )
+            cmd_str = f'script -qc "{agy_inner}" /dev/null'
             env = os.environ.copy()
             env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
             env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
@@ -155,7 +157,7 @@ def call_llm(messages: list) -> str:
                 capture_output=True,
                 text=True,
                 env=env,
-                timeout=60
+                timeout=120
             )
             if res.returncode == 0:
                 output = res.stdout.strip()
@@ -1243,7 +1245,7 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
 
         elif req_path == "/api/system/google_status":
             ENV_VARS = load_env()
-            llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
+            llm_backend = ENV_VARS.get("LLM_BACKEND", "agy").lower()
             gemini_key = ENV_VARS.get("GEMINI_API_KEY", "")
             
             ai_url = ENV_VARS.get("AI_URL", "")
@@ -1253,34 +1255,19 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             status = "disconnected"
             
             if llm_backend == "agy":
+                # 零阻塞状态检测：检查 agy 的认证缓存文件是否存在
                 termux_home = "/data/data/com.termux/files/home"
-                termux_usr = "/data/data/com.termux/files/usr"
-                is_termux = os.path.exists("/data/data/com.termux")
-                if is_termux:
-                    cmd_str = (
-                        "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
-                        f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
-                        f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
-                        f"-b {termux_usr}/etc/hosts:/etc/hosts "
-                        f"-b {termux_home}/.local/glibc:/lib "
-                        f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy status"
-                    )
-                    env = os.environ.copy()
-                    env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
-                    env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
-                    env["PYTHONHOME"] = termux_usr
-                    env["HOME"] = termux_home
-                else:
-                    cmd_str = "agy status"
-                    env = os.environ.copy()
-                    
-                try:
-                    res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, env=env, timeout=5)
-                    output = res.stdout.strip()
-                    if res.returncode == 0 and "not signed in" not in output:
-                        status = "connected"
-                except:
-                    pass
+                agy_state = os.path.join(termux_home, ".gemini", "antigravity-cli", "jetski_state.pbtxt")
+                
+                if os.path.exists(agy_state):
+                    try:
+                        with open(agy_state, 'r') as f:
+                            content = f.read()
+                        # 已认证的 jetski_state 会包含 oauth 相关字段
+                        if "refresh_token" in content or "access_token" in content:
+                            status = "connected"
+                    except:
+                        pass
             else:
                 token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN", "")
                 refresh_token = ENV_VARS.get("GOOGLE_REFRESH_TOKEN", "")
@@ -1933,12 +1920,9 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
 
         elif self.path == "/api/system/auth/init":
             try:
-                import pty
+                global active_auth_process
+                # 清理旧的认证进程
                 if active_auth_process:
-                    try:
-                        os.close(active_auth_process[0])
-                    except:
-                        pass
                     try:
                         active_auth_process[1].terminate()
                     except:
@@ -1948,15 +1932,17 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 termux_home = "/data/data/com.termux/files/home"
                 termux_usr = "/data/data/com.termux/files/usr"
                 
-                cmd_str = (
+                # 用 script -qc 包裹 agy，为 bubbletea 提供 PTY 环境
+                agy_inner = (
                     "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
                     f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
                     f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
                     f"-b {termux_usr}/etc/hosts:/etc/hosts "
                     f"-b {termux_home} "
                     f"-b {termux_home}/.local/glibc:/lib "
-                    f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy"
+                    f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy --prompt auth"
                 )
+                cmd_str = f'script -qc "{agy_inner}" /dev/null'
                 
                 env = os.environ.copy()
                 env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
@@ -1964,76 +1950,105 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 env["PYTHONHOME"] = termux_usr
                 env["HOME"] = termux_home
                 
-                master_fd, slave_fd = pty.openpty()
+                # 使用 Popen 保持进程存活，后续可通过 stdin 输入验证码
                 proc = subprocess.Popen(
                     cmd_str,
                     shell=True,
-                    stdin=slave_fd,
-                    stdout=slave_fd,
-                    stderr=slave_fd,
-                    close_fds=True,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     env=env
                 )
-                os.close(slave_fd)
                 
-                active_auth_process = (master_fd, proc)
+                active_auth_process = (None, proc)
                 
-                time.sleep(0.5)
-                os.write(master_fd, b"1\n")
-                
+                # 读取输出以获取认证 URL
                 auth_url = ""
-                timeout_limit = time.time() + 10
+                timeout_limit = time.time() + 15
                 buffer = ""
                 while time.time() < timeout_limit:
                     try:
-                        r = os.read(master_fd, 1024).decode('utf-8', errors='ignore')
-                        if not r:
-                            break
-                        buffer += r
-                        if "https://" in buffer:
-                            urls = re.findall(r'https://\S+', buffer)
+                        import select
+                        ready, _, _ = select.select([proc.stdout], [], [], 0.5)
+                        if ready:
+                            r = proc.stdout.read1(4096).decode('utf-8', errors='ignore') if hasattr(proc.stdout, 'read1') else os.read(proc.stdout.fileno(), 4096).decode('utf-8', errors='ignore')
+                            if not r:
+                                break
+                            buffer += r
+                            urls = re.findall(r'https://accounts\.google\.com/o/oauth2/auth\S+', buffer)
                             if urls:
                                 auth_url = urls[0]
                                 break
-                    except OSError:
+                        if proc.poll() is not None:
+                            # 进程已退出，读取剩余输出
+                            remaining = proc.stdout.read().decode('utf-8', errors='ignore')
+                            buffer += remaining
+                            urls = re.findall(r'https://accounts\.google\.com/o/oauth2/auth\S+', buffer)
+                            if urls:
+                                auth_url = urls[0]
+                            break
+                    except Exception:
                         break
                         
                 if auth_url:
                     self._send_json({"ok": True, "url": auth_url})
                 else:
-                    self._send_json({"ok": False, "message": "Failed to retrieve OAuth URL from TTY buffer."})
+                    self._send_json({"ok": False, "message": f"Failed to retrieve OAuth URL. Output: {buffer[:200]}"})
             except Exception as e:
                 traceback.print_exc()
                 self._send_json({"ok": False, "message": str(e)}, 500)
 
         elif self.path == "/api/system/auth/confirm":
             try:
-                if not active_auth_process:
-                    self._send_json({"ok": False, "message": "No active authorization session. Please initialize again."})
-                    return
-                    
                 req_json = json.loads(post_data.decode('utf-8'))
                 code = req_json.get("code", "").strip()
                 if not code:
                     self._send_json({"ok": False, "message": "Verification code is empty"})
                     return
-                    
-                master_fd, proc = active_auth_process
-                os.write(master_fd, f"{code}\n".encode('utf-8'))
                 
-                time.sleep(3)
+                global active_auth_process
+                if not active_auth_process or not active_auth_process[1]:
+                    self._send_json({"ok": False, "message": "Authentication session not found or expired. Please click 'Connect Google Drive' again."})
+                    return
+                
+                proc = active_auth_process[1]
                 
                 try:
-                    os.close(master_fd)
-                except:
-                    pass
+                    proc.stdin.write(f"{code}\n".encode('utf-8'))
+                    proc.stdin.flush()
+                except Exception as e:
+                    self._send_json({"ok": False, "message": f"Failed to submit code: {str(e)}. The process might have died."})
+                    active_auth_process = None
+                    return
+                
+                # 等待 agy 处理完成并退出
                 try:
-                    proc.terminate()
-                except:
-                    pass
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    try:
+                        proc.terminate()
+                    except:
+                        pass
+                
                 active_auth_process = None
+                termux_home = "/data/data/com.termux/files/home"
                 
-                self._send_json({"ok": True, "message": "Google Credentials submitted to agy client successfully!"})
+                # 验证本地是否写入了 Token 配置文件
+                agy_state = os.path.join(termux_home, ".gemini", "antigravity-cli", "jetski_state.pbtxt")
+                has_auth = False
+                if os.path.exists(agy_state):
+                    try:
+                        with open(agy_state, 'r') as f:
+                            content = f.read()
+                        if "refresh_token" in content or "access_token" in content:
+                            has_auth = True
+                    except:
+                        pass
+                            
+                if has_auth:
+                    self._send_json({"ok": True, "message": "Google Credentials submitted to agy client successfully!"})
+                else:
+                    self._send_json({"ok": False, "message": "Failed to authenticate. The verification code might be invalid or expired."})
             except Exception as e:
                 traceback.print_exc()
                 self._send_json({"ok": False, "message": str(e)}, 500)
@@ -2246,6 +2261,70 @@ threading.Thread(target=battery_monitor_daemon, daemon=True).start()
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        global active_auth_process
+        from urllib.parse import urlparse, parse_qs
+        parsed_path = urlparse(self.path)
+        params = parse_qs(parsed_path.query)
+        
+        code = params.get('code', [''])[0]
+        if code:
+            try:
+                if active_auth_process:
+                    master_fd, proc = active_auth_process
+                    os.write(master_fd, f"{code}\n".encode('utf-8'))
+                    time.sleep(3)
+                    try: os.close(master_fd)
+                    except: pass
+                    try: proc.terminate()
+                    except: pass
+                    active_auth_process = None
+            except Exception as e:
+                print(f"Error submitting OAuth code in background: {e}")
+        
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.end_headers()
+        html_content = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google 授权成功</title>
+    <style>
+        body { margin: 0; padding: 0; background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
+        .card { background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; padding: 40px 30px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 0 30px rgba(56,189,248,0.2); max-width: 90%; width: 360px; }
+        .icon { font-size: 64px; margin-bottom: 20px; animation: bounce 1s infinite alternate; }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+        h1 { font-size: 22px; margin: 0 0 10px 0; color: #38bdf8; }
+        p { font-size: 15px; color: #94a3b8; line-height: 1.6; margin: 0 0 25px 0; }
+        .btn { background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #fff; border: none; padding: 12px 24px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 10px 15px -3px rgba(2, 132, 199, 0.4); text-decoration: none; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">🎉</div>
+        <h1>Google 账号授权绑定成功！</h1>
+        <p>Antigravity CLI (agy) 已在手机终端底层完成深度绑定与智力融合！</p>
+        <div class="btn" onclick="window.close(); history.back();">返回 App 控制台</div>
+    </div>
+</body>
+</html>"""
+        self.wfile.write(html_content.encode('utf-8'))
+    def log_message(self, format, *args):
+        pass
+
+def run_oauth_server():
+    try:
+        oauthd = ThreadingHTTPServer(('', 10815), OAuthCallbackHandler)
+        print("🚀 Local OAuth Callback Server running on port 10815")
+        oauthd.serve_forever()
+    except Exception as e:
+        print(f"Error starting OAuth callback server on 10815: {e}")
+
+threading.Thread(target=run_oauth_server, daemon=True).start()
 
 def run_server():
     server_address = ('', PORT)
