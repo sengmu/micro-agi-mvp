@@ -1,0 +1,17 @@
+{
+  "name": "Micro-AGI MVP 手机控制中心",
+  "short_name": "Micro-AGI",
+  "description": "基于 Android & Termux 底层生态的 AI 本地智能体控制中心",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#06b2d2",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/Hiyori/Hiyori.2048/texture_00.png",
+      "sizes": "256x256",
+      "type": "image/png"
+    }
+  ]
+}
