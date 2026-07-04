@@ -3752,6 +3752,64 @@
             }
         }
 
+        window.initAgyAuth = async function() {
+            const btn = document.getElementById('quick-terminal-auth-btn');
+            const zone = document.getElementById('quick-terminal-auth-input-zone');
+            if (!btn || !zone) return;
+            
+            btn.innerText = "正在拉起授权...";
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/system/auth/init', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.ok && data.url) {
+                    btn.innerText = "请在浏览器中登录";
+                    zone.style.display = "flex";
+                    window.open(data.url, '_blank');
+                } else {
+                    btn.innerText = "获取失败，重试";
+                    btn.disabled = false;
+                    alert("错误: " + (data.message || "无法拉起 OAuth 链接"));
+                }
+            } catch (e) {
+                btn.innerText = "连接失败，重试";
+                btn.disabled = false;
+                alert("连接服务失败: " + e.message);
+            }
+        };
+
+        window.confirmAgyAuth = async function() {
+            const input = document.getElementById('quick-terminal-auth-code');
+            const bar = document.getElementById('quick-terminal-auth-bar');
+            if (!input || !bar) return;
+            
+            const code = input.value.trim();
+            if (!code) {
+                alert("请输入您获取到的验证 Code！");
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/system/auth/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await response.json();
+                
+                if (data.ok) {
+                    alert("🔑 Google 账号绑定成功！您现在可以顺畅执行 agy 了！");
+                    bar.style.display = "none";
+                } else {
+                    alert("绑定失败: " + data.message);
+                }
+            } catch (e) {
+                alert("提交 Code 失败: " + e.message);
+            }
+        };
+
         window.addEventListener('DOMContentLoaded', () => {
             const inputEl = document.getElementById('terminal-input');
             if (inputEl) {

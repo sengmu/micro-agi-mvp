@@ -18,6 +18,7 @@ import socket
 import db
 
 PORT = 8085
+active_auth_process = None
 
 # 1. Load config from local env
 def load_env() -> dict:
@@ -1826,6 +1827,96 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"stdout": "", "stderr": "Error: Command timed out after 30 seconds."})
             except Exception as e:
                 self._send_json({"stdout": "", "stderr": f"Error executing command: {str(e)}"}, 500)
+
+        elif self.path == "/api/system/auth/init":
+            global active_auth_process
+            try:
+                if active_auth_process and active_auth_process.poll() is None:
+                    active_auth_process.terminate()
+                    active_auth_process = None
+                
+                termux_home = "/data/data/com.termux/files/home"
+                termux_usr = "/data/data/com.termux/files/usr"
+                
+                cmd_str = (
+                    "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
+                    f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
+                    f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
+                    f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                    f"-b {termux_home} "
+                    f"-b {termux_home}/.local/glibc:/lib "
+                    f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy"
+                )
+                
+                env = os.environ.copy()
+                env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+                env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+                env["PYTHONHOME"] = termux_usr
+                env["HOME"] = termux_home
+                
+                active_auth_process = subprocess.Popen(
+                    cmd_str,
+                    shell=True,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    env=env
+                )
+                
+                active_auth_process.stdin.write("1\n")
+                active_auth_process.stdin.flush()
+                
+                auth_url = ""
+                timeout_limit = time.time() + 15
+                while time.time() < timeout_limit:
+                    line = active_auth_process.stdout.readline()
+                    if not line:
+                        break
+                    print(f"[AuthInit] Stdout: {line.strip()}")
+                    if "https://" in line and "google" in line:
+                        urls = re.findall(r'https://\S+', line)
+                        if urls:
+                            auth_url = urls[0]
+                            break
+                            
+                if auth_url:
+                    self._send_json({"ok": True, "url": auth_url})
+                else:
+                    self._send_json({"ok": False, "message": "Failed to retrieve OAuth URL. Please check Termux network connection."})
+            except Exception as e:
+                traceback.print_exc()
+                self._send_json({"ok": False, "message": str(e)}, 500)
+
+        elif self.path == "/api/system/auth/confirm":
+            global active_auth_process
+            try:
+                if not active_auth_process or active_auth_process.poll() is not None:
+                    self._send_json({"ok": False, "message": "No active authorization session. Please initialize again."})
+                    return
+                    
+                req_json = json.loads(post_data.decode('utf-8'))
+                code = req_json.get("code", "").strip()
+                if not code:
+                    self._send_json({"ok": False, "message": "Verification code is empty"})
+                    return
+                    
+                active_auth_process.stdin.write(f"{code}\n")
+                active_auth_process.stdin.flush()
+                
+                time.sleep(3)
+                
+                if active_auth_process.poll() is not None:
+                    active_auth_process = None
+                    self._send_json({"ok": True, "message": "Authorization successful! You can now run antigravity."})
+                else:
+                    self._send_json({"ok": True, "message": "Credentials submitted. Verify terminal commands now."})
+                    active_auth_process.terminate()
+                    active_auth_process = None
+            except Exception as e:
+                traceback.print_exc()
+                self._send_json({"ok": False, "message": str(e)}, 500)
 
         elif self.path == "/api/hardware/clipboard":
             try:

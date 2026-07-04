@@ -130,6 +130,17 @@
                         <span onclick="toggleQuickTerminal()" style="color: #a1a1aa; cursor: pointer; font-size: 0.65rem;" title="收起">➖</span>
                     </div>
                 </div>
+                <!-- Google Auth Panel -->
+                <div id="quick-terminal-auth-bar" style="background: rgba(234, 179, 8, 0.08); border-bottom: 1px solid rgba(234, 179, 8, 0.15); padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; text-align: left; font-family: sans-serif;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                        <span style="color: #facc15; font-size: 0.65rem; font-weight: bold;">🔑 绑定 Google 账号以在终端使用 antigravity (agy)</span>
+                        <button id="quick-terminal-auth-btn" onclick="initAgyAuth()" style="background: #eab308; color: #000; border: none; border-radius: 4px; padding: 4px 8px; font-size: 0.65rem; font-weight: bold; cursor: pointer; transition: all 0.2s;">一键登录绑定</button>
+                    </div>
+                    <div id="quick-terminal-auth-input-zone" style="display: none; align-items: center; gap: 6px; margin-top: 2px;">
+                        <input type="text" id="quick-terminal-auth-code" placeholder="请粘贴浏览器里的授权 Code..." style="flex: 1; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 4px 6px; color: #fff; font-size: 0.65rem; font-family: monospace; outline: none;">
+                        <button onclick="confirmAgyAuth()" style="background: #38bdf8; color: #000; border: none; border-radius: 4px; padding: 4px 10px; font-size: 0.65rem; font-weight: bold; cursor: pointer;">提交</button>
+                    </div>
+                </div>
                 <!-- Terminal Output -->
                 <div id="quick-terminal-output" style="flex: 1; padding: 10px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; min-height: 80px; max-height: 160px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-family: monospace; color: #38bdf8; text-align: left;">Welcome to Micro-AGI Web Terminal.<br>Type your shell command below and press Enter or click Execute.</div>
                 <!-- Terminal Input -->
