@@ -1784,16 +1784,37 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
         elif self.path == "/api/system/command":
             try:
                 req_json = json.loads(post_data.decode('utf-8'))
-                cmd = req_json.get("cmd", "")
+                cmd = req_json.get("cmd", "").strip()
                 if not cmd:
                     self._send_json({"stdout": "", "stderr": "Error: Empty command"})
                 else:
-                    env = os.environ.copy()
+                    # 拦截并翻译 agy / antigravity 命令为完整的 Termux proot 物理执行链，解决 Alias 失效问题
+                    termux_home = "/data/data/com.termux/files/home"
                     termux_usr = "/data/data/com.termux/files/usr"
+                    
+                    agy_real_command = (
+                        "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
+                        f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
+                        f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
+                        f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                        f"-b {termux_home}/.local/glibc:/lib "
+                        f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy"
+                    )
+                    
+                    if cmd == "agy":
+                        cmd = agy_real_command
+                    elif cmd.startswith("agy "):
+                        cmd = agy_real_command + cmd[3:]
+                    elif cmd == "antigravity":
+                        cmd = agy_real_command
+                    elif cmd.startswith("antigravity "):
+                        cmd = agy_real_command + cmd[11:]
+                        
+                    env = os.environ.copy()
                     env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
                     env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
                     env["PYTHONHOME"] = termux_usr
-                    env["HOME"] = "/data/data/com.termux/files/home"
+                    env["HOME"] = termux_home
                     env["SHELL"] = termux_usr + "/bin/sh"
                     
                     res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, env=env)
