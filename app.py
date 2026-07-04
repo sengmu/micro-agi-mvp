@@ -17,7 +17,7 @@ import re
 import socket
 import db
 
-PORT = 8085
+PORT = 8087
 active_auth_process = None
 
 # 1. Load config from local env
