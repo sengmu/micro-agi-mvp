@@ -3,3 +3,9 @@ __pycache__/
 *.log
 .env
 .DS_Store
+
+android_host/.gradle/
+android_host/app/build/
+android_host/build/
+android_host/local.properties
+android_host/.idea/

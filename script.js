@@ -3570,14 +3570,34 @@
 
         window.toggleQuickTerminal = function() {
             const term = document.getElementById('quickTerminal');
+            const chatArea = document.getElementById('chatArea');
+            const suggestions = document.getElementById('suggestionsContainer');
+            const outputEl = document.getElementById('quick-terminal-output');
+            
             if (term) {
                 const isHidden = window.getComputedStyle(term).display === 'none';
                 if (isHidden) {
                     term.style.setProperty('display', 'flex', 'important');
+                    if (chatArea) chatArea.style.setProperty('display', 'none', 'important');
+                    if (suggestions) suggestions.style.setProperty('display', 'none', 'important');
+                    
+                    term.style.maxHeight = '80vh';
+                    if (outputEl) outputEl.style.maxHeight = '70vh';
+                    
                     const inp = document.getElementById('quick-terminal-input');
-                    if (inp) inp.focus();
+                    if (inp) {
+                        inp.focus();
+                        setTimeout(() => {
+                            term.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        }, 100);
+                    }
                 } else {
                     term.style.setProperty('display', 'none', 'important');
+                    if (chatArea) chatArea.style.setProperty('display', 'flex', 'important');
+                    if (suggestions) suggestions.style.setProperty('display', 'flex', 'important');
+                    
+                    term.style.maxHeight = '250px';
+                    if (outputEl) outputEl.style.maxHeight = '160px';
                 }
             }
         };
