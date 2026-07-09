@@ -1,5 +1,4 @@
 # 在线编译 AGI-Bot（系统桌宠）APK
-# 触发：手动 Run workflow，或推送 android_host/** 变更
 name: Build AGI-Bot APK
 
 on:
@@ -21,9 +20,6 @@ jobs:
   build:
     name: Assemble Debug APK
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: android_host
 
     steps:
       - name: Checkout
@@ -38,11 +34,36 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Install Android packages
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          # accept licenses non-interactively
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Prepare Gradle
+        working-directory: android_host
+        run: |
+          chmod +x gradlew
+          # 显式写入 SDK 路径，避免 "SDK location not found"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls -la
+          java -version
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+        working-directory: android_host
+        run: |
+          ./gradlew :app:assembleDebug --stacktrace --info --no-daemon
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+
+      - name: List outputs
+        if: always()
+        working-directory: android_host
+        run: |
+          find . -name "*.apk" -o -name "*.log" 2>/dev/null | head -50
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null || true
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -51,12 +72,3 @@ jobs:
           path: android_host/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "### AGI-Bot build" >> "$GITHUB_STEP_SUMMARY"
-          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "APK not found"
-          find app/build/outputs -name "*.apk" 2>/dev/null | while read f; do
-            echo "- \`$f\` ($(du -h "$f" | cut -f1))" >> "$GITHUB_STEP_SUMMARY"
-          done
