@@ -140,12 +140,33 @@ def create_artifact(project_id: str, chat_id: str, node_id: str, title: str, typ
     conn.close()
     return aid
 
-def list_artifacts(project_id: str, type_filter: str = None):
+def list_artifacts(project_id: str = None, type_filter: str = None):
+    """List artifacts. If project_id is empty/None/'all', return across all projects."""
     conn = get_connection()
-    if type_filter and type_filter != "all":
-        cur = conn.execute("SELECT * FROM artifacts WHERE project_id = ? AND type = ? ORDER BY created_at DESC", (project_id, type_filter))
+    tf = (type_filter or "").strip()
+    if tf in ("", "all", "undefined", "null"):
+        tf = None
+    pid = (project_id or "").strip()
+    if pid in ("", "all", "undefined", "null"):
+        pid = None
+
+    if pid and tf:
+        cur = conn.execute(
+            "SELECT * FROM artifacts WHERE project_id = ? AND type = ? ORDER BY created_at DESC",
+            (pid, tf),
+        )
+    elif pid:
+        cur = conn.execute(
+            "SELECT * FROM artifacts WHERE project_id = ? ORDER BY created_at DESC",
+            (pid,),
+        )
+    elif tf:
+        cur = conn.execute(
+            "SELECT * FROM artifacts WHERE type = ? ORDER BY created_at DESC",
+            (tf,),
+        )
     else:
-        cur = conn.execute("SELECT * FROM artifacts WHERE project_id = ? ORDER BY created_at DESC", (project_id,))
+        cur = conn.execute("SELECT * FROM artifacts ORDER BY created_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows

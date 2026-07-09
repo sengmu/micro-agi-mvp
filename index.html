@@ -38,7 +38,7 @@
     <script src="/pixi.min.js?v=5"></script>
     <script src="/live2dcubismcore.min.js?v=4"></script>
     <script src="/pixi-live2d-display.min.js?v=4"></script>
-    <link rel="stylesheet" href="/style.css?v=1.4.1">
+    <link rel="stylesheet" href="/style.css?v=1.6.2-syspet">
 </head>
 <body>
 
@@ -112,7 +112,7 @@
                 <span>✨</span> 点击展开技能与 MCP 工具箱 (可搜索/配置) <span>⤊</span>
             </div>
             <!-- Suggestion quick chips -->
-            <div class="suggestions-container" style="padding: 0 4px; margin-bottom: 20px;">
+            <div class="suggestions-container" id="suggestionsContainer" style="padding: 0 4px; margin-bottom: 20px;">
                 <div class="suggestion-chip" onclick="toggleQuickTerminal()" style="border: 1px solid rgba(6,182,212,0.3); color: var(--primary); font-weight: bold;">💻 快捷终端</div>
                 <div class="suggestion-chip" onclick="sendSuggestion('查看当前系统硬件配置')">🔍 查系统信息</div>
                 <div class="suggestion-chip" onclick="sendSuggestion('列出当前文件夹下的全部文件')">📂 看当前文件</div>
@@ -173,33 +173,32 @@
 
         <!-- End of Chat Tab Content -->
 
-        <!-- Workspace Console Overlay & Bottom Sheet Drawer -->
-        <div class="workspace-console-overlay" id="workspaceConsoleOverlay" onclick="toggleWorkspaceConsole()"></div>
-        <div class="workspace-console-drawer" id="workspaceConsoleDrawer">
-            <!-- Header -->
-            <div class="wardrobe-header" style="padding: 16px 24px 12px; border-bottom: none;">
-                <h2 style="font-size: 1.15rem; font-weight: bold; margin: 0; display: flex; align-items: center; gap: 8px; color: white;">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-                    工作区成果资产箱
-                </h2>
-                <button class="icon-btn" onclick="toggleWorkspaceConsole()" style="background: rgba(255,255,255,0.05); border: none;">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-            </div>
-
-            <!-- Pane: Artifacts -->
-            <div class="wardrobe-pane console-pane active" id="console-pane-artifacts" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
-                <div class="artifacts-tabs" style="padding: 0 24px 10px; border-bottom: none; margin-bottom: 8px; display: flex; gap: 10px;">
-                    <button class="suggestion-chip artifacts-tab active" data-type="all" onclick="loadArtifacts('all')" style="margin: 0; border: 1px solid rgba(255,255,255,0.08);">全部</button>
-                    <button class="suggestion-chip artifacts-tab" data-type="code" onclick="loadArtifacts('code')" style="margin: 0; border: 1px solid rgba(255,255,255,0.08);">代码切片</button>
-                    <button class="suggestion-chip artifacts-tab" data-type="image" onclick="loadArtifacts('image')" style="margin: 0; border: 1px solid rgba(255,255,255,0.08);">视觉素材</button>
+        <!-- 成果资产箱（独立类名，避免 wardrobe/tabs 旧样式污染） -->
+        <div class="aa-overlay" id="workspaceConsoleOverlay" onclick="toggleWorkspaceConsole()"></div>
+        <div class="aa-sheet" id="workspaceConsoleDrawer">
+            <div class="aa-handle" aria-hidden="true"></div>
+            <header class="aa-header">
+                <div class="aa-header-left">
+                    <div class="aa-title">成果资产箱</div>
+                    <span class="aa-badge" id="artifactsCountBadge">0</span>
                 </div>
-                <div class="artifact-grid" id="artifactsGrid" style="flex: 1; overflow-y: auto; padding: 0 24px 20px;">
-                    <!-- Rendered by JS -->
+                <div class="aa-header-right">
+                    <button type="button" class="aa-btn-icon" onclick="loadArtifacts(window._artifactTypeFilter||'all')" aria-label="刷新">↻</button>
+                    <button type="button" class="aa-btn-icon" onclick="toggleWorkspaceConsole()" aria-label="关闭">✕</button>
                 </div>
+            </header>
+            <div class="aa-body" id="console-pane-artifacts">
+                <div class="aa-filters" role="tablist">
+                    <button type="button" class="aa-chip active" data-type="all" onclick="loadArtifacts('all')">全部</button>
+                    <button type="button" class="aa-chip" data-type="code" onclick="loadArtifacts('code')">代码切片</button>
+                    <button type="button" class="aa-chip" data-type="image" onclick="loadArtifacts('image')">视觉素材</button>
+                </div>
+                <div class="aa-search-box">
+                    <input type="search" id="artifactsSearch" class="aa-search" placeholder="搜索标题、预览、语言…" oninput="filterArtifactsLocal()" autocomplete="off">
+                </div>
+                <div class="aa-list" id="artifactsGrid"></div>
             </div>
         </div>
-
 
         </div>
 
@@ -410,11 +409,17 @@
                         
                         <!-- Google OAuth Login Button -->
                         <div id="google-login-section" style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
-                            <button onclick="triggerGoogleLogin()" class="suggestion-chip" style="margin: 0; width: 100%; height: 34px; font-size: 0.72rem; font-weight: bold; border: 1px solid rgba(66, 133, 244, 0.4); background: rgba(66, 133, 244, 0.15); color: #8ab4f8; display: flex; justify-content: center; align-items: center; gap: 6px; cursor: pointer; border-radius: 6px;">
+                            <button id="google-settings-auth-btn" onclick="triggerGoogleLogin()" class="suggestion-chip" style="margin: 0; width: 100%; height: 34px; font-size: 0.72rem; font-weight: bold; border: 1px solid rgba(66, 133, 244, 0.4); background: rgba(66, 133, 244, 0.15); color: #8ab4f8; display: flex; justify-content: center; align-items: center; gap: 6px; cursor: pointer; border-radius: 6px;">
                                 <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.986 0-.74-.08-1.305-.18-1.86H12.24z"/></svg>
                                 关联 Google 账号登录 (免 Key)
                             </button>
                             <span style="font-size: 0.6rem; color: var(--text-muted); text-align: center;">像 Antigravity 一样直接登录谷歌账号，免费调用官方 Gemini</span>
+                            
+                            <!-- Hidden Auth Code input container -->
+                            <div id="google-settings-auth-input-zone" style="display: none; align-items: center; gap: 6px; margin-top: 4px;">
+                                <input type="text" id="google-settings-auth-code" onkeydown="if(event.keyCode==13){submitGoogleAuthCode(); return false;}" placeholder="请粘贴授权 Code..." style="flex: 1; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 6px 8px; color: #fff; font-size: 0.68rem; font-family: monospace; outline: none; height: 28px;">
+                                <button type="button" onclick="submitGoogleAuthCode(); return false;" style="background: #38bdf8; color: #000; border: none; border-radius: 4px; padding: 4px 10px; font-size: 0.68rem; font-weight: bold; cursor: pointer; height: 28px;">提交</button>
+                            </div>
                         </div>
                         
                         <!-- Or manual setup -->
@@ -496,6 +501,27 @@
                             <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
                                 <span style="font-size: 0.72rem; color: white; display: flex; align-items: center; gap: 6px;">👁️ 折叠隐藏对话区域</span>
                                 <input type="checkbox" id="settings-chat-checkbox" onchange="toggleChatLogs()" style="width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer;">
+                            </div>
+
+                            <!-- App 内桌宠 -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                                <div style="display:flex;flex-direction:column;gap:2px;min-width:0;padding-right:8px;">
+                                    <span style="font-size: 0.72rem; color: white; display: flex; align-items: center; gap: 6px;">🐾 App 内桌宠</span>
+                                    <span style="font-size: 0.62rem; color: var(--text-muted);">网页内角落小人（仅本页面）</span>
+                                </div>
+                                <input type="checkbox" id="settings-pet-checkbox" onchange="togglePetMode(this.checked)" style="width: 15px; height: 15px; accent-color: var(--primary); cursor: pointer; flex-shrink:0;">
+                            </div>
+
+                            <!-- 系统级桌宠 -->
+                            <div style="display: flex; flex-direction: column; gap: 8px; background: rgba(255,255,255,0.02); padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(6,182,212,0.25);">
+                                <div style="display:flex;flex-direction:column;gap:2px;">
+                                    <span style="font-size: 0.72rem; color: white; font-weight: bold;">🖥️ 系统级桌宠（跨应用悬浮）</span>
+                                    <span style="font-size: 0.62rem; color: var(--text-muted); line-height:1.4;">需安装 AGI-Bot 宿主 App，并授予「显示在其他应用上层」。悬浮窗加载 /pet.html</span>
+                                </div>
+                                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                    <button type="button" class="suggestion-chip" style="margin:0;padding:6px 12px;font-size:0.72rem;border:1px solid rgba(6,182,212,0.35);background:rgba(6,182,212,0.15);color:var(--primary);cursor:pointer;" onclick="startSystemPet()">开启系统桌宠</button>
+                                    <button type="button" class="suggestion-chip" style="margin:0;padding:6px 12px;font-size:0.72rem;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#e2e8f0;cursor:pointer;" onclick="stopSystemPet()">关闭</button>
+                                </div>
                             </div>
 
                             <!-- System Update -->
@@ -592,15 +618,11 @@
             <!-- Dynamic Content based on type -->
         </div>
         <div class="artifact-modal-footer">
-            <button class="modal-btn btn-secondary" id="artifactModalTimeMachine">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                时光机
-            </button>
-            <button class="modal-btn btn-secondary" id="artifactModalCopy">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                复制内容
-            </button>
-            <button class="modal-btn btn-primary" id="artifactModalDownload">
+            <button class="modal-btn btn-secondary" id="artifactModalInsert" type="button">插入输入框</button>
+            <button class="modal-btn btn-secondary" id="artifactModalAsk" type="button">基于此提问</button>
+            <button class="modal-btn btn-secondary" id="artifactModalTimeMachine" type="button">定位原消息</button>
+            <button class="modal-btn btn-secondary" id="artifactModalCopy" type="button">复制</button>
+            <button class="modal-btn btn-primary" id="artifactModalDownload" type="button">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 下载文件
             </button>
@@ -651,6 +673,6 @@
         </div>
     </div>
 
-    <script src="/script.js?v=1.4.1"></script>
+    <script src="/script.js?v=1.6.2-syspet"></script>
 </body>
 </html>

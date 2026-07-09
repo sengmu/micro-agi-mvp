@@ -380,6 +380,87 @@
             });
         }
 
+        // ===== Streaming helpers (SSE) =====
+        function removeLoadingBubbles() {
+            document.querySelectorAll(".loading-dots").forEach(d => {
+                try { d.parentElement.parentElement.parentElement.remove(); } catch (e) {}
+            });
+            const legacy = document.getElementById("stream-msg");
+            // keep stream-msg if actively streaming
+        }
+
+        function ensureStreamBubble() {
+            let msg = document.getElementById("stream-msg");
+            if (msg) return msg;
+            removeLoadingBubbles();
+            msg = document.createElement("div");
+            msg.className = "message assistant";
+            msg.id = "stream-msg";
+            msg.innerHTML = `
+                <div class="message-avatar">HY</div>
+                <div class="message-content">
+                    <span class="message-sender">Hiyori <span style="opacity:.5;font-size:.7rem;">流式</span></span>
+                    <div class="message-bubble stream-bubble-body" style="white-space:pre-wrap;word-break:break-word;"><span class="stream-cursor" style="opacity:.7;animation:blink 1s step-end infinite;">▋</span></div>
+                </div>
+            `;
+            chatArea.appendChild(msg);
+            if (!document.getElementById("stream-blink-style")) {
+                const st = document.createElement("style");
+                st.id = "stream-blink-style";
+                st.textContent = "@keyframes blink{50%{opacity:0}}";
+                document.head.appendChild(st);
+            }
+            return msg;
+        }
+
+        function updateStreamBubble(fullText) {
+            const msg = ensureStreamBubble();
+            const body = msg.querySelector(".stream-bubble-body");
+            // Hide raw execute tags mid-stream for cleaner UX
+            let display = fullText;
+            const execIdx = display.indexOf("<execute>");
+            if (execIdx !== -1) {
+                display = display.slice(0, execIdx).trimEnd() + "\n\n⏳ 准备申请执行命令…";
+            }
+            body.innerHTML = escapeHtml(display).replace(/\n/g, "<br>") +
+                '<span class="stream-cursor" style="opacity:.7;animation:blink 1s step-end infinite;">▋</span>';
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function clearStreamBubble() {
+            const msg = document.getElementById("stream-msg");
+            if (msg) msg.remove();
+        }
+
+        async function consumeSSE(response, handlers) {
+            if (!response.ok) {
+                const t = await response.text().catch(() => "");
+                throw new Error("HTTP " + response.status + " " + t.slice(0, 120));
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                let sep;
+                while ((sep = buffer.indexOf("\n\n")) !== -1) {
+                    const block = buffer.slice(0, sep);
+                    buffer = buffer.slice(sep + 2);
+                    const lines = block.split("\n");
+                    for (const line of lines) {
+                        if (!line.startsWith("data:")) continue;
+                        const raw = line.slice(5).trim();
+                        if (!raw || raw === "[DONE]") continue;
+                        let ev;
+                        try { ev = JSON.parse(raw); } catch (e) { continue; }
+                        if (handlers && handlers.onEvent) handlers.onEvent(ev);
+                    }
+                }
+            }
+        }
+
         async function sendMessage() {
             const text = chatInput.value.trim();
             const isReading = pendingAttachments.some(a => a.status === 'reading');
@@ -469,7 +550,7 @@
             }
 
             appendMessage("user", "您", displayHtml, true);
-            const loadingId = appendLoading();
+            appendLoading();
             chatArea.scrollTop = chatArea.scrollHeight;
 
             // Trigger Live2D thinking state and cancel previous speech
@@ -478,10 +559,14 @@
                 live2dModel.motion('FlickDown');
             }
 
+            let streamedText = "";
+            let finalData = null;
+            let streamError = null;
+
             try {
-                const response = await fetch("/api/chat", {
+                const response = await fetch("/api/chat/stream", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
                     body: JSON.stringify({
                         message: finalPayloadText,
                         history: chatHistory,
@@ -491,50 +576,87 @@
                     signal: currentController.signal
                 });
 
-                const data = await response.json();
-                
-                // If backend returned a chat_id and our currentChatId was empty, set it
-                if (data.chat_id && currentChatId === "") {
-                    currentChatId = data.chat_id;
-                    const title = text ? (text.slice(0, 16) + (text.length > 16 ? "..." : "")) : "新对话";
-                    const headerTitle = document.getElementById('header-chat-title');
-                    if (headerTitle) {
-                        headerTitle.textContent = title;
+                await consumeSSE(response, {
+                    onEvent: (ev) => {
+                        if (ev.type === "meta" && ev.chat_id) {
+                            if (!currentChatId) {
+                                currentChatId = ev.chat_id;
+                                loadChatSessions(false);
+                            } else {
+                                currentChatId = ev.chat_id;
+                            }
+                        } else if (ev.type === "token" && ev.text) {
+                            streamedText += ev.text;
+                            updateStreamBubble(streamedText);
+                        } else if (ev.type === "done") {
+                            finalData = ev;
+                        } else if (ev.type === "error") {
+                            streamError = ev.error || "未知流式错误";
+                        }
                     }
-                    loadChatSessions(false);
-                }
+                });
 
-                // Remove loading regardless of completion
-                const loadingDots = document.querySelectorAll(".loading-dots");
-                loadingDots.forEach(d => d.parentElement.parentElement.parentElement.remove());
-
-                if (data.error) {
-                    appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
-                    if (live2dModel) {
-                        live2dModel.motion('Flick');
+                if (streamError) {
+                    clearStreamBubble();
+                    removeLoadingBubbles();
+                    appendMessage("assistant", "系统错误", `执行发生错误: ${streamError}`);
+                    if (live2dModel) live2dModel.motion('Flick');
+                } else if (finalData) {
+                    // Replace raw stream bubble with polished final render
+                    clearStreamBubble();
+                    removeLoadingBubbles();
+                    if (finalData.chat_id && !currentChatId) {
+                        currentChatId = finalData.chat_id;
                     }
-                    if (isVoiceEnabled) {
-                        speakText("发生了一些错误，请主人检查后台日志。");
-                    }
+                    handleAgentResponse(finalData, text || "[包含附件的消息]");
+                } else if (streamedText) {
+                    clearStreamBubble();
+                    removeLoadingBubbles();
+                    handleAgentResponse({
+                        status: "completed",
+                        response: streamedText,
+                        steps: []
+                    }, text || "[包含附件的消息]");
                 } else {
-                    handleAgentResponse(data, text || "[包含附件的消息]");
+                    removeLoadingBubbles();
+                    appendMessage("assistant", "Hiyori", "（没有收到模型输出）");
                 }
             } catch (err) {
-                const loadingDots = document.querySelectorAll(".loading-dots");
-                loadingDots.forEach(d => d.parentElement.parentElement.parentElement.remove());
+                clearStreamBubble();
+                removeLoadingBubbles();
                 
                 if (err.name === 'AbortError') {
-                    appendMessage("assistant", "Hiyori", "⚠️ 对话已被您手动打断。");
+                    appendMessage("assistant", "Hiyori", streamedText
+                        ? escapeHtml(streamedText).replace(/\n/g, "<br>") + "<br><br>⚠️ 对话已被您手动打断。"
+                        : "⚠️ 对话已被您手动打断。");
                     if (live2dModel) {
                         live2dModel.motion('Idle');
                     }
                 } else {
-                    appendMessage("assistant", "连接失败", `无法连接: ${err.message}`);
-                    if (live2dModel) {
-                        live2dModel.motion('Flick');
-                    }
-                    if (isVoiceEnabled) {
-                        speakText("无法连接到后台服务，请检查网络。");
+                    // Fallback to non-stream API if stream endpoint missing/broken
+                    try {
+                        const fallback = await fetch("/api/chat", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                message: finalPayloadText,
+                                history: chatHistory,
+                                attachments: fileAttachments,
+                                chat_id: currentChatId
+                            }),
+                            signal: currentController.signal
+                        });
+                        const data = await fallback.json();
+                        if (data.chat_id) currentChatId = data.chat_id;
+                        if (data.error) {
+                            appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
+                        } else {
+                            handleAgentResponse(data, text || "[包含附件的消息]");
+                        }
+                    } catch (err2) {
+                        appendMessage("assistant", "连接失败", `无法连接: ${err.message}`);
+                        if (live2dModel) live2dModel.motion('Flick');
+                        if (isVoiceEnabled) speakText("无法连接到后台服务，请检查网络。");
                     }
                 }
             } finally {
@@ -702,9 +824,9 @@
 
         async function submitApprovalFlow(approved, editedCommand) {
             const cardId = currentCardId;
-            if (!cardId) return;
+            // cardId optional for bubble-only flow
 
-            const loadingId = appendLoading();
+            appendLoading();
             chatArea.scrollTop = chatArea.scrollHeight;
             
             chatInput.disabled = true;
@@ -712,28 +834,74 @@
             setSendBtnState(true);
             currentController = new AbortController();
 
+            let streamedText = "";
+            let finalData = null;
+            let streamError = null;
+
             try {
-                const response = await fetch("/api/approve", {
+                const response = await fetch("/api/approve/stream", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
                     body: JSON.stringify({ approved: approved, edited_command: editedCommand }),
                     signal: currentController.signal
                 });
 
-                const data = await response.json();
-                document.getElementById(loadingId).remove();
+                await consumeSSE(response, {
+                    onEvent: (ev) => {
+                        if (ev.type === "token" && ev.text) {
+                            streamedText += ev.text;
+                            updateStreamBubble(streamedText);
+                        } else if (ev.type === "done") {
+                            finalData = ev;
+                        } else if (ev.type === "error") {
+                            streamError = ev.error || "审批流错误";
+                        } else if (ev.type === "step") {
+                            // command finished; keep loading until tokens arrive
+                        }
+                    }
+                });
 
-                if (data.error) {
-                    appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
+                clearStreamBubble();
+                removeLoadingBubbles();
+
+                if (streamError) {
+                    appendMessage("assistant", "系统错误", `执行发生错误: ${streamError}`);
+                } else if (finalData) {
+                    handleAgentResponse(finalData);
+                } else if (streamedText) {
+                    handleAgentResponse({ status: "completed", response: streamedText, steps: [] });
                 } else {
-                    handleAgentResponse(data);
+                    // fallback non-stream
+                    const response2 = await fetch("/api/approve", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ approved: approved, edited_command: editedCommand }),
+                        signal: currentController.signal
+                    });
+                    const data = await response2.json();
+                    if (data.error) {
+                        appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
+                    } else {
+                        handleAgentResponse(data);
+                    }
                 }
             } catch (err) {
-                if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
-                
-                if (err.name === 'AbortError') {
-                    appendMessage("assistant", "Hiyori", "⚠️ 命令执行与对话已被您手动打断。");
-                } else {
+                clearStreamBubble();
+                removeLoadingBubbles();
+                try {
+                    const response = await fetch("/api/approve", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ approved: approved, edited_command: editedCommand }),
+                        signal: currentController.signal
+                    });
+                    const data = await response.json();
+                    if (data.error) {
+                        appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
+                    } else {
+                        handleAgentResponse(data);
+                    }
+                } catch (err2) {
                     appendMessage("assistant", "连接失败", `无法连接: ${err.message}`);
                 }
             } finally {
@@ -741,6 +909,7 @@
                 document.getElementById("attachBtn").disabled = false;
                 setSendBtnState(false);
                 currentController = null;
+                chatInput.placeholder = "输入一条控制指令 (例如: 列出当前文件)...";
             }
         }
 
@@ -1506,7 +1675,11 @@
             }
             
             live2dModel.motion(randomMotion);
-            showWelcomeBubble(randomText);
+            if (isPetMode()) {
+                showPetMiniBubble(randomText);
+            } else {
+                showWelcomeBubble(randomText);
+            }
             
             if (isVoiceEnabled) {
                 speakText(randomText);
@@ -1585,11 +1758,17 @@
             
             const baseScale = nativeHeight > 0 ? (live2dContainer.clientHeight / nativeHeight) : 0.5;
             const isMobile = live2dContainer.clientWidth < 600;
-            const zoomScale = baseScale * (isMobile ? 1.5 : 1.65);
+            const isPet = document.body.classList.contains('pet-mode');
+            // 桌宠模式：尽量填满小窗；正常模式保持原有构图
+            const zoomScale = isPet
+                ? baseScale * 1.35
+                : baseScale * (isMobile ? 1.5 : 1.65);
             live2dModel.scale.set(zoomScale);
             
             live2dModel.x = (live2dContainer.clientWidth - (nativeWidth * zoomScale)) / 2;
-            live2dModel.y = 20;
+            live2dModel.y = isPet ? (live2dContainer.clientHeight * 0.02) : 20;
+
+            if (isPet) return; // 桌宠模式用迷你气泡，不走大气泡定位
 
             const positionBubble = (id, targetMobileW, targetDesktopW) => {
                 const bubbleEl = document.getElementById(id);
@@ -1611,6 +1790,184 @@
             positionBubble('welcome-bubble', 155, 185);
             positionBubble('approval-bubble', 170, 260);
         }
+
+        // ---------- 桌宠模式（App 内悬浮小人） ----------
+        let petDragBound = false;
+        let petBubbleTimer = null;
+
+        function isPetMode() {
+            return document.body.classList.contains('pet-mode');
+        }
+
+        function ensurePetFab() {
+            const container = document.querySelector('.avatar-container');
+            if (!container) return;
+            let fab = container.querySelector('.pet-mode-fab');
+            if (!fab) {
+                fab = document.createElement('button');
+                fab.type = 'button';
+                fab.className = 'pet-mode-fab';
+                fab.title = '退出桌宠';
+                fab.textContent = '✕';
+                fab.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePetMode(false);
+                });
+                container.appendChild(fab);
+            }
+        }
+
+        function showPetMiniBubble(text) {
+            if (!isPetMode() || !text) return;
+            let el = document.getElementById('pet-mini-bubble');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'pet-mini-bubble';
+                el.className = 'pet-mini-bubble';
+                document.body.appendChild(el);
+            }
+            el.textContent = text;
+            const box = document.querySelector('.avatar-container');
+            if (box) {
+                const r = box.getBoundingClientRect();
+                // 气泡优先放在桌宠左侧
+                const left = Math.max(8, r.left - 158);
+                const top = Math.max(8, r.top + 12);
+                el.style.left = left + 'px';
+                el.style.top = top + 'px';
+            }
+            el.classList.add('show');
+            if (petBubbleTimer) clearTimeout(petBubbleTimer);
+            petBubbleTimer = setTimeout(() => el.classList.remove('show'), 4200);
+        }
+
+        function bindPetDrag() {
+            if (petDragBound) return;
+            const box = document.querySelector('.avatar-container');
+            if (!box) return;
+            petDragBound = true;
+            let dragging = false;
+            let startX = 0, startY = 0, origLeft = 0, origTop = 0;
+            let moved = false;
+
+            const onDown = (e) => {
+                if (!isPetMode()) return;
+                // 点关闭按钮不拖
+                if (e.target && e.target.closest && e.target.closest('.pet-mode-fab')) return;
+                const pt = e.touches ? e.touches[0] : e;
+                dragging = true;
+                moved = false;
+                startX = pt.clientX;
+                startY = pt.clientY;
+                const r = box.getBoundingClientRect();
+                origLeft = r.left;
+                origTop = r.top;
+                box.classList.add('pet-dragging');
+                e.preventDefault();
+            };
+            const onMove = (e) => {
+                if (!dragging || !isPetMode()) return;
+                const pt = e.touches ? e.touches[0] : e;
+                const dx = pt.clientX - startX;
+                const dy = pt.clientY - startY;
+                if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+                let nx = origLeft + dx;
+                let ny = origTop + dy;
+                const maxX = window.innerWidth - box.offsetWidth - 4;
+                const maxY = window.innerHeight - box.offsetHeight - 4;
+                nx = Math.max(4, Math.min(maxX, nx));
+                ny = Math.max(4, Math.min(maxY, ny));
+                box.style.left = nx + 'px';
+                box.style.top = ny + 'px';
+                box.style.right = 'auto';
+                box.style.bottom = 'auto';
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                box.classList.remove('pet-dragging');
+                // 记住位置
+                try {
+                    const r = box.getBoundingClientRect();
+                    localStorage.setItem('micro-agi-pet-pos', JSON.stringify({ left: r.left, top: r.top }));
+                } catch (err) {}
+            };
+
+            box.addEventListener('pointerdown', onDown);
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+            box.addEventListener('touchstart', onDown, { passive: false });
+            window.addEventListener('touchmove', onMove, { passive: false });
+            window.addEventListener('touchend', onUp);
+        }
+
+        function applyPetPosition() {
+            const box = document.querySelector('.avatar-container');
+            if (!box || !isPetMode()) return;
+            try {
+                const raw = localStorage.getItem('micro-agi-pet-pos');
+                if (raw) {
+                    const p = JSON.parse(raw);
+                    if (typeof p.left === 'number' && typeof p.top === 'number') {
+                        box.style.left = p.left + 'px';
+                        box.style.top = p.top + 'px';
+                        box.style.right = 'auto';
+                        box.style.bottom = 'auto';
+                        return;
+                    }
+                }
+            } catch (e) {}
+            // 默认右下角
+            box.style.left = 'auto';
+            box.style.top = 'auto';
+            box.style.right = '10px';
+            box.style.bottom = 'calc(88px + env(safe-area-inset-bottom, 0px))';
+        }
+
+        function togglePetMode(enabled) {
+            const on = !!enabled;
+            document.body.classList.toggle('pet-mode', on);
+            const chk = document.getElementById('settings-pet-checkbox');
+            if (chk) chk.checked = on;
+            try { localStorage.setItem('micro-agi-pet-mode', on ? '1' : '0'); } catch (e) {}
+
+            if (on) {
+                // 桌宠与「折叠对话」互斥：桌宠时要看聊天
+                const chatChk = document.getElementById('settings-chat-checkbox');
+                if (chatChk && chatChk.checked) {
+                    chatChk.checked = false;
+                    toggleChatLogs();
+                }
+                ensurePetFab();
+                bindPetDrag();
+                applyPetPosition();
+                showPetMiniBubble('桌宠模式已开启，拖我可以换位置～');
+            } else {
+                const box = document.querySelector('.avatar-container');
+                if (box) {
+                    box.style.left = '';
+                    box.style.top = '';
+                    box.style.right = '';
+                    box.style.bottom = '';
+                }
+                const mini = document.getElementById('pet-mini-bubble');
+                if (mini) mini.classList.remove('show');
+            }
+            // 等布局生效后再缩放模型
+            requestAnimationFrame(() => {
+                setTimeout(() => adjustModelLayout(), 50);
+            });
+        }
+
+        // 恢复桌宠设置
+        (function restorePetMode() {
+            try {
+                if (localStorage.getItem('micro-agi-pet-mode') === '1') {
+                    // 等 DOM/模型准备好后再开
+                    setTimeout(() => togglePetMode(true), 800);
+                }
+            } catch (e) {}
+        })();
 
         async function initLive2D() {
             if (typeof PIXI === 'undefined' || typeof PIXI.live2d === 'undefined') {
@@ -2412,30 +2769,31 @@
             });
         }
 
+        function closeWorkspaceConsole() {
+            const overlay = document.getElementById('workspaceConsoleOverlay');
+            const drawer = document.getElementById('workspaceConsoleDrawer');
+            if (overlay) overlay.classList.remove('active');
+            if (drawer) drawer.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
         function toggleWorkspaceConsole() {
             const overlay = document.getElementById('workspaceConsoleOverlay');
             const drawer = document.getElementById('workspaceConsoleDrawer');
             if (!overlay || !drawer) return;
-            
-            const isMoreMenuOpen = document.getElementById('more-menu-drawer').classList.contains('open');
-            if (isMoreMenuOpen) closeMoreMenu();
-            
+
+            const moreMenu = document.getElementById('more-menu-drawer');
+            if (moreMenu && moreMenu.classList.contains('open')) {
+                try { closeMoreMenu(); } catch (e) {}
+            }
+
             if (drawer.classList.contains('active')) {
-                overlay.classList.remove('active');
-                drawer.classList.remove('active');
+                closeWorkspaceConsole();
             } else {
                 overlay.classList.add('active');
                 drawer.classList.add('active');
-                
-                // Auto load or select active tab
-                const activeTab = document.querySelector('.console-tab.active');
-                if (activeTab) {
-                    const tabs = Array.from(document.querySelectorAll('.console-tab'));
-                    const idx = tabs.indexOf(activeTab);
-                    if (idx === 0) loadArtifacts();
-                } else {
-                    switchConsoleTab(0);
-                }
+                document.body.style.overflow = 'hidden';
+                loadArtifacts(window._artifactTypeFilter || 'all');
             }
         }
 
@@ -2693,64 +3051,184 @@
         }
 
         let currentArtifactsData = [];
+        let filteredArtifactsData = [];
         let activeArtifact = null;
+        window._artifactTypeFilter = 'all';
+
+        function formatArtifactTime(iso) {
+            if (!iso) return '';
+            try {
+                // sqlite CURRENT_TIMESTAMP is UTC-ish 'YYYY-MM-DD HH:MM:SS'
+                const s = String(iso).replace(' ', 'T');
+                const d = new Date(s.includes('T') ? (s.endsWith('Z') ? s : s + 'Z') : s);
+                if (isNaN(d.getTime())) return String(iso).slice(0, 16);
+                const diff = (Date.now() - d.getTime()) / 1000;
+                if (diff < 60) return '刚刚';
+                if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+                if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+                if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+                return d.toLocaleDateString();
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function formatArtifactSize(n) {
+            n = Number(n) || 0;
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            return (n / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function langBadge(art) {
+            const lang = (art.lang || art.key_prompt || '').trim();
+            if (lang) return lang.toUpperCase().slice(0, 8);
+            if (art.type === 'image') return 'IMG';
+            const t = (art.title || '').toLowerCase();
+            const keys = ['python','js','ts','html','css','json','bash','sql','go','rust','java'];
+            for (const k of keys) if (t.includes(k)) return k.toUpperCase();
+            return art.type === 'code' ? 'CODE' : 'FILE';
+        }
 
         async function loadArtifacts(typeFilter = 'all') {
+            window._artifactTypeFilter = typeFilter || 'all';
+            const grid = document.getElementById('artifactsGrid');
+            if (grid) {
+                grid.innerHTML = `<div class="aa-empty"><h3>加载中…</h3></div>`;
+            }
+            document.querySelectorAll('.aa-chip').forEach(tab => {
+                tab.classList.toggle('active', tab.getAttribute('data-type') === window._artifactTypeFilter);
+            });
             try {
-                // For MVP, we query without strict project_id, let backend fallback to default if needed.
-                // In future: `?project_id=${currentProjectId}&type_filter=${typeFilter}`
-                const response = await fetch(`/api/artifacts?type_filter=${typeFilter}`);
+                const response = await fetch(`/api/artifacts?project_id=all&type_filter=${encodeURIComponent(window._artifactTypeFilter)}`);
                 const artifacts = await response.json();
-                currentArtifactsData = artifacts || [];
-                renderArtifacts(currentArtifactsData);
-                
-                // Update active tab UI
-                document.querySelectorAll('.artifacts-tab').forEach(tab => tab.classList.remove('active'));
-                const targetTab = document.querySelector(`.artifacts-tab[data-type="${typeFilter}"]`);
-                if(targetTab) targetTab.classList.add('active');
-                
+                currentArtifactsData = Array.isArray(artifacts) ? artifacts : [];
+                filterArtifactsLocal();
             } catch (err) {
                 console.error("Failed to load artifacts:", err);
+                if (grid) {
+                    grid.innerHTML = `<div class="aa-empty"><h3>加载失败</h3><p>${escapeHtml(err.message || '网络异常')}</p></div>`;
+                }
             }
+        }
+
+        function filterArtifactsLocal() {
+            const q = ((document.getElementById('artifactsSearch') || {}).value || '').trim().toLowerCase();
+            let list = currentArtifactsData.slice();
+            if (q) {
+                list = list.filter(a => {
+                    const hay = [a.title, a.preview_text, a.lang, a.key_prompt, a.type, a.content_url]
+                        .map(x => String(x || '').toLowerCase()).join(' ');
+                    return hay.includes(q);
+                });
+            }
+            filteredArtifactsData = list;
+            renderArtifacts(list);
         }
 
         function renderArtifacts(artifacts) {
             const grid = document.getElementById('artifactsGrid');
-            grid.innerHTML = '';
-            
+            if (!grid) return;
+            const badge = document.getElementById('artifactsCountBadge');
+            if (badge) badge.textContent = String((artifacts || []).length);
+
             if (!artifacts || artifacts.length === 0) {
-                grid.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; grid-column: 1/-1; text-align: center; padding: 40px;">暂无成果。与 AI 对话让它生成 code 或图片吧！</div>`;
+                const hasAny = (currentArtifactsData || []).length > 0;
+                grid.innerHTML = hasAny
+                    ? `<div class="aa-empty"><h3>没有匹配结果</h3><p>换个关键词，或切换上方分类。</p></div>`
+                    : `<div class="aa-empty"><h3>资产箱是空的</h3><p>让 AI 输出代码块（\`\`\`python）或图片链接，会自动归档到这里。</p></div>`;
                 return;
             }
 
+            grid.innerHTML = '';
             artifacts.forEach(art => {
-                const card = document.createElement('div');
-                card.className = `artifact-card ${art.type}`;
-                card.setAttribute('onclick', `openArtifactModal('${art.artifact_id}')`);
-                
-                let iconHtml = `&lt;/&gt;`;
-                if (art.type === 'image') {
-                    iconHtml = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
-                }
-                
-                card.innerHTML = `
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <div class="artifact-icon">${iconHtml}</div>
-                        <div class="artifact-title" title="${art.title}">${art.title}</div>
+                const id = art.artifact_id;
+                const lang = langBadge(art);
+                const typeLabel = art.type === 'image' ? '图片' : '代码';
+                const typeClass = art.type === 'image' ? 'image' : 'code';
+                const metaTime = formatArtifactTime(art.created_at);
+                const sizeLabel = art.type === 'code'
+                    ? `${art.lines || (String(art.content_url || '').split('\n').length)} 行`
+                    : formatArtifactSize(art.size || (art.content_url || '').length);
+
+                const row = document.createElement('div');
+                row.className = 'aa-item';
+                row.onclick = () => openArtifactModal(id);
+                row.innerHTML = `
+                    <div class="aa-item-top">
+                        <div class="aa-item-title">${escapeHtml(art.title || '未命名资产')}</div>
+                        <span class="aa-item-type ${typeClass}">${typeLabel}</span>
                     </div>
-                    <div class="artifact-preview">${escapeHtml(art.preview_text)}</div>
-                    <div class="artifact-action" style="display: flex; gap: 8px;">
-                        <button class="icon-btn" onclick="deleteArtifact(event, '${art.artifact_id}')" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-radius: 6px; padding: 4px; width: 26px; height: 26px; border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: center; transition: all 0.2s;" title="删除资产">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                        </button>
-                        <button class="btn-time-machine" onclick="timeMachineTo(event, '${art.node_id}')">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            时光机
-                        </button>
+                    <div class="aa-item-meta">
+                        <span class="aa-tag">${escapeHtml(lang)}</span>
+                        <span class="aa-tag">${escapeHtml(sizeLabel)}</span>
+                        ${metaTime ? `<span class="aa-tag">${escapeHtml(metaTime)}</span>` : ''}
+                    </div>
+                    <div class="aa-item-preview">${escapeHtml(art.preview_text || (art.type === 'image' ? art.content_url : '') || '无预览')}</div>
+                    <div class="aa-item-actions">
+                        <button type="button" class="aa-act primary" data-act="copy">复制</button>
+                        <button type="button" class="aa-act" data-act="insert">插入</button>
+                        <button type="button" class="aa-act" data-act="ask">继续问</button>
+                        <button type="button" class="aa-act danger" data-act="del">删除</button>
                     </div>
                 `;
-                grid.appendChild(card);
+                row.querySelectorAll('[data-act]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const act = btn.getAttribute('data-act');
+                        if (act === 'copy') quickCopyArtifact(id);
+                        else if (act === 'insert') insertArtifactToInput(id);
+                        else if (act === 'ask') askAboutArtifact(id);
+                        else if (act === 'del') deleteArtifact(e, id);
+                    });
+                });
+                grid.appendChild(row);
             });
+        }
+
+        function getArtifactById(id) {
+            return (currentArtifactsData || []).find(a => a.artifact_id === id);
+        }
+
+        function quickCopyArtifact(id) {
+            const art = getArtifactById(id);
+            if (!art) return;
+            const text = art.type === 'image' ? art.content_url : art.content_url;
+            copyTextToClipboard(text, art.type === 'image' ? '图片链接已复制' : '代码已复制');
+        }
+
+        function insertArtifactToInput(id) {
+            const art = getArtifactById(id);
+            if (!art) return;
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            let snippet = '';
+            if (art.type === 'image') {
+                snippet = art.content_url || '';
+            } else {
+                const lang = art.lang || art.key_prompt || '';
+                snippet = '```' + lang + '\n' + (art.content_url || '') + '\n```';
+            }
+            input.value = (input.value ? input.value + '\n\n' : '') + snippet;
+            input.focus();
+            closeWorkspaceConsole();
+            showToast('已插入到输入框');
+        }
+
+        function askAboutArtifact(id) {
+            const art = getArtifactById(id);
+            if (!art) return;
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            if (art.type === 'image') {
+                input.value = `请基于这张图继续说明/改进：${art.content_url}`;
+            } else {
+                const lang = art.lang || art.key_prompt || 'code';
+                input.value = `请基于下面这段 ${lang} 代码继续优化/解释：\n\n\`\`\`${lang}\n${art.content_url}\n\`\`\``;
+            }
+            input.focus();
+            closeWorkspaceConsole();
+            showToast('已填入提问，可直接发送');
         }
 
         async function deleteArtifact(e, artifactId) {
@@ -2760,8 +3238,7 @@
             try {
                 const res = await fetch(`/api/artifacts/${artifactId}`, { method: 'DELETE' });
                 if (res.ok) {
-                    const activeTab = document.querySelector('.artifacts-tab.active');
-                    loadArtifacts(activeTab ? activeTab.dataset.type : 'all');
+                    loadArtifacts(window._artifactTypeFilter || 'all');
                     if (activeArtifact && activeArtifact.artifact_id === artifactId) {
                         closeArtifactModal();
                     }
@@ -2777,21 +3254,20 @@
 
         function timeMachineTo(e, nodeId) {
             if (e) e.stopPropagation();
-            toggleArtifacts(); // Close drawer
+            closeWorkspaceConsole();
             
             // Wait for drawer to close before scrolling
             setTimeout(() => {
                 const targetMsg = document.getElementById(`msg-${nodeId}`);
                 if (targetMsg) {
-                    // Smooth scroll
                     targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // Highlight animation
                     targetMsg.classList.add('highlight-msg');
                     setTimeout(() => targetMsg.classList.remove('highlight-msg'), 3000);
+                    showToast('已定位到对话中的原消息');
                 } else {
-                    alert("该消息已在当前历史流中被清除或折叠。");
+                    showToast('当前会话里找不到原消息（可能已换对话或不在屏幕缓存中）');
                 }
-            }, 300);
+            }, 320);
         }
 
         function openArtifactModal(artifactId) {
@@ -2829,13 +3305,13 @@
             
             // Set up footer actions
             const tmBtn = document.getElementById('artifactModalTimeMachine');
-            tmBtn.onclick = (e) => {
+            if (tmBtn) tmBtn.onclick = (e) => {
                 closeArtifactModal();
                 timeMachineTo(e, activeArtifact.node_id);
             };
 
             const copyBtn = document.getElementById('artifactModalCopy');
-            copyBtn.onclick = () => {
+            if (copyBtn) copyBtn.onclick = () => {
                 if (activeArtifact.type === 'image') {
                     copyTextToClipboard(activeArtifact.content_url, "图片链接已复制！");
                 } else {
@@ -2843,8 +3319,19 @@
                 }
             };
 
+            const insertBtn = document.getElementById('artifactModalInsert');
+            if (insertBtn) insertBtn.onclick = () => {
+                closeArtifactModal();
+                insertArtifactToInput(activeArtifact.artifact_id);
+            };
+            const askBtn = document.getElementById('artifactModalAsk');
+            if (askBtn) askBtn.onclick = () => {
+                closeArtifactModal();
+                askAboutArtifact(activeArtifact.artifact_id);
+            };
+
             const downloadBtn = document.getElementById('artifactModalDownload');
-            downloadBtn.onclick = () => {
+            if (downloadBtn) downloadBtn.onclick = () => {
                 downloadArtifactFile(activeArtifact);
             };
 
@@ -3046,6 +3533,42 @@
         window.checkSystemUpdate = checkSystemUpdate;
         window.triggerSystemUpdate = triggerSystemUpdate;
         window.sendSuggestion = sendSuggestion;
+        window.togglePetMode = togglePetMode;
+        window.closeWorkspaceConsole = closeWorkspaceConsole;
+        window.startSystemPet = function startSystemPet() {
+            // 通过 deep link 调起 AGI-Bot 宿主开启悬浮窗
+            const url = 'magi://pet/start';
+            try {
+                // 优先 location（WebView 可拦截）
+                window.location.href = url;
+            } catch (e) {}
+            // 同时尝试 iframe / a 标签，兼容部分 WebView
+            try {
+                const a = document.createElement('a');
+                a.href = url;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => a.remove(), 500);
+            } catch (e2) {}
+            if (typeof showToast === 'function') {
+                showToast('正在请求系统桌宠…若无反应请打开 AGI-Bot App');
+            } else {
+                alert('正在请求系统桌宠。\n若无反应，请打开 AGI-Bot 宿主 App 并点「开启系统桌宠」。\n需授予悬浮窗权限，且 8085 服务已运行。');
+            }
+        };
+        window.stopSystemPet = function stopSystemPet() {
+            try { window.location.href = 'magi://pet/stop'; } catch (e) {}
+            try {
+                const a = document.createElement('a');
+                a.href = 'magi://pet/stop';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => a.remove(), 500);
+            } catch (e2) {}
+            if (typeof showToast === 'function') showToast('已发送关闭桌宠请求');
+        };
 
         window.copyCodeBlock = function(btn) {
             const container = btn.closest('.code-block-container');
@@ -3481,6 +4004,7 @@
         });
 
         // --- Google Login & API Configuration Helpers ---
+        // --- Google Login & API Configuration Helpers ---
         async function updateGoogleLoginStatus() {
             try {
                 const response = await fetch("/api/system/google_status");
@@ -3488,33 +4012,44 @@
                 const data = await response.json();
                 
                 const statusEl = document.getElementById("google-login-status");
-                const sectionEl = document.getElementById("google-login-section");
+                const authBtn = document.getElementById("google-settings-auth-btn");
+                const authZone = document.getElementById("google-settings-auth-input-zone");
                 const keyInput = document.getElementById("custom-gemini-key");
                 
                 if (data.gemini_key) {
                     keyInput.value = data.gemini_key;
                 }
                 
+                const isAgy = data.llm_backend === "agy";
+                
                 if (data.status === "connected") {
-                    if (statusEl) statusEl.innerHTML = '<span style="color: #34a853; font-weight: bold;">已关联 Google</span>';
-                    if (sectionEl) {
-                        sectionEl.innerHTML = `
-                            <button onclick="triggerGoogleLogout()" class="suggestion-chip" style="margin: 0; width: 100%; height: 34px; font-size: 0.72rem; border: 1px solid rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.1); color: var(--error); display: flex; justify-content: center; align-items: center; gap: 6px; cursor: pointer; border-radius: 6px;">
-                                🔓 断开 Google 账号关联
-                            </button>
-                            <span style="font-size: 0.6rem; color: var(--text-muted); text-align: center;">您已成功登录 Google，系统会自动刷新并使用官方配额调用 Gemini。</span>
-                        `;
+                    if (statusEl) {
+                        statusEl.innerHTML = isAgy 
+                            ? '<span style="color: #34a853; font-weight: bold;">🟢 已绑定 Antigravity (agy)</span>'
+                            : '<span style="color: #34a853; font-weight: bold;">已关联 Google</span>';
+                    }
+                    if (authBtn) {
+                        authBtn.innerHTML = isAgy ? "🔄 重新登录绑定 (Antigravity CLI)" : "🔓 断开 Google 账号关联";
+                        authBtn.style.background = isAgy ? "rgba(255,255,255,0.05)" : "rgba(239, 68, 68, 0.1)";
+                        authBtn.style.color = isAgy ? "#fff" : "var(--error)";
+                        authBtn.style.borderColor = isAgy ? "rgba(255,255,255,0.1)" : "rgba(239, 68, 68, 0.3)";
+                        authBtn.onclick = isAgy ? triggerGoogleLogin : triggerGoogleLogout;
                     }
                 } else {
-                    if (statusEl) statusEl.innerHTML = '<span style="color: #ef4444; font-weight: bold;">未关联</span>';
-                    if (sectionEl) {
-                        sectionEl.innerHTML = `
-                            <button onclick="triggerGoogleLogin()" class="suggestion-chip" style="margin: 0; width: 100%; height: 34px; font-size: 0.72rem; font-weight: bold; border: 1px solid rgba(66, 133, 244, 0.4); background: rgba(66, 133, 244, 0.15); color: #8ab4f8; display: flex; justify-content: center; align-items: center; gap: 6px; cursor: pointer; border-radius: 6px;">
-                                <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.986 0-.74-.08-1.305-.18-1.86H12.24z"/></svg>
-                                关联 Google 账号登录 (免 Key)
-                            </button>
-                            <span style="font-size: 0.6rem; color: var(--text-muted); text-align: center;">像 Antigravity 一样直接登录谷歌账号，免费调用官方 Gemini</span>
+                    if (statusEl) {
+                        statusEl.innerHTML = isAgy 
+                            ? '<span style="color: #ef4444; font-weight: bold;">🔴 未关联 (Antigravity CLI)</span>'
+                            : '<span style="color: #ef4444; font-weight: bold;">未关联</span>';
+                    }
+                    if (authBtn) {
+                        authBtn.innerHTML = `
+                            <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24"><path fill="currentColor" d="M12.24 10.285V13.4h6.887c-.275 1.565-1.88 4.604-6.887 4.604-4.33 0-7.859-3.578-7.859-8s3.53-8 7.859-8c2.46 0 4.105 1.025 5.047 1.926l2.427-2.334C18.155 2.502 15.34 1 12.24 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 10.793-4.537 10.793-10.986 0-.74-.08-1.305-.18-1.86H12.24z"/></svg>
+                            关联 Google 账号登录 (免 Key)
                         `;
+                        authBtn.style.background = "rgba(66, 133, 244, 0.15)";
+                        authBtn.style.color = "#8ab4f8";
+                        authBtn.style.borderColor = "rgba(66, 133, 244, 0.4)";
+                        authBtn.onclick = triggerGoogleLogin;
                     }
                 }
             } catch (err) {
@@ -3522,8 +4057,79 @@
             }
         }
 
-        function triggerGoogleLogin() {
-            window.open("/google_login", "_blank", "width=500,height=600,location=no,menubar=no,status=no");
+        async function triggerGoogleLogin() {
+            const btn = document.getElementById('google-settings-auth-btn');
+            const zone = document.getElementById('google-settings-auth-input-zone');
+            if (!btn || !zone) return;
+            
+            try {
+                const checkRes = await fetch("/api/system/google_status");
+                const checkData = await checkRes.json();
+                if (checkData.llm_backend !== "agy") {
+                    window.open("/google_login", "_blank", "width=500,height=600,location=no,menubar=no,status=no");
+                    return;
+                }
+            } catch(e) {}
+            
+            btn.innerText = "正在拉起授权...";
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/system/auth/init', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.ok && data.url) {
+                    btn.innerText = "请在浏览器中登录";
+                    zone.style.display = "flex";
+                    if (window.AndroidBridge && typeof window.AndroidBridge.openExternalBrowser === 'function') {
+                        window.AndroidBridge.openExternalBrowser(data.url);
+                    } else {
+                        window.location.href = data.url;
+                    }
+                } else {
+                    btn.innerText = "获取失败，重试";
+                    btn.disabled = false;
+                    alert("错误: " + (data.message || "无法拉起 OAuth 链接"));
+                }
+            } catch (e) {
+                btn.innerText = "连接失败，重试";
+                btn.disabled = false;
+                alert("连接服务失败: " + e.message);
+            }
+        }
+
+        async function submitGoogleAuthCode() {
+            const input = document.getElementById('google-settings-auth-code');
+            const zone = document.getElementById('google-settings-auth-input-zone');
+            const btn = document.getElementById('google-settings-auth-btn');
+            if (!input || !zone || !btn) return;
+            
+            const code = input.value.trim();
+            if (!code) {
+                alert("请输入您获取到的验证 Code！");
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/system/auth/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await response.json();
+                
+                if (data.ok) {
+                    alert("🔑 恭喜，Google 账号在手机本地的 Antigravity CLI (agy) 下已成功授权绑定！");
+                    zone.style.display = "none";
+                    input.value = "";
+                    btn.disabled = false;
+                    updateGoogleLoginStatus();
+                } else {
+                    alert("绑定失败: " + data.message);
+                }
+            } catch (e) {
+                alert("提交 Code 失败: " + e.message);
+            }
         }
 
         async function triggerGoogleLogout() {
@@ -3570,14 +4176,34 @@
 
         window.toggleQuickTerminal = function() {
             const term = document.getElementById('quickTerminal');
+            const chatArea = document.getElementById('chatArea');
+            const suggestions = document.getElementById('suggestionsContainer');
+            const outputEl = document.getElementById('quick-terminal-output');
+            
             if (term) {
                 const isHidden = window.getComputedStyle(term).display === 'none';
                 if (isHidden) {
                     term.style.setProperty('display', 'flex', 'important');
+                    if (chatArea) chatArea.style.setProperty('display', 'none', 'important');
+                    if (suggestions) suggestions.style.setProperty('display', 'none', 'important');
+                    
+                    term.style.maxHeight = '80vh';
+                    if (outputEl) outputEl.style.maxHeight = '70vh';
+                    
                     const inp = document.getElementById('quick-terminal-input');
-                    if (inp) inp.focus();
+                    if (inp) {
+                        inp.focus();
+                        setTimeout(() => {
+                            term.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        }, 100);
+                    }
                 } else {
                     term.style.setProperty('display', 'none', 'important');
+                    if (chatArea) chatArea.style.setProperty('display', 'flex', 'important');
+                    if (suggestions) suggestions.style.setProperty('display', 'flex', 'important');
+                    
+                    term.style.maxHeight = '250px';
+                    if (outputEl) outputEl.style.maxHeight = '160px';
                 }
             }
         };
@@ -3731,6 +4357,7 @@
                 outputEl.scrollTop = outputEl.scrollHeight;
             }
         }
+
 
         window.addEventListener('DOMContentLoaded', () => {
             const inputEl = document.getElementById('terminal-input');

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Hiyori Pet</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; background: transparent !important;
+      touch-action: none;
+    }
+    #wrap {
+      width: 100%; height: 100%;
+      position: relative;
+      background: rgba(8, 12, 22, 0.55);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.18);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #bar {
+      position: absolute; left: 0; right: 0; top: 0; height: 28px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 6px 0 10px;
+      background: linear-gradient(to bottom, rgba(0,0,0,.45), transparent);
+      z-index: 5; color: #e2e8f0; font: 600 11px/1 -apple-system, sans-serif;
+      user-select: none;
+    }
+    #drag { flex: 1; opacity: .85; }
+    #close {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.2);
+      background: rgba(0,0,0,.4); color: #fff;
+      font-size: 12px; line-height: 1; padding: 0;
+    }
+    #bubble {
+      position: absolute; left: 8px; right: 8px; bottom: 8px;
+      background: rgba(15,23,42,.92); color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,.12); border-radius: 10px;
+      padding: 6px 8px; font: 600 11px/1.35 -apple-system, sans-serif;
+      opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 4;
+      max-height: 48px; overflow: hidden;
+    }
+    #bubble.show { opacity: 1; }
+    #err {
+      position: absolute; inset: 28px 8px 8px; color: #fca5a5;
+      font: 12px/1.4 sans-serif; display: none; z-index: 3;
+      background: rgba(0,0,0,.5); border-radius: 10px; padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="bar">
+      <span id="drag">⋮⋮ 日和 · 拖这里</span>
+      <button id="close" type="button" aria-label="关闭">✕</button>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div id="bubble"></div>
+    <div id="err"></div>
+  </div>
+
+  <script src="/pixi.min.js?v=5"></script>
+  <script src="/live2dcubismcore.min.js?v=4"></script>
+  <script src="/pixi-live2d-display.min.js?v=4"></script>
+  <script>
+    const closeBtn = document.getElementById('close');
+    const bubble = document.getElementById('bubble');
+    const errBox = document.getElementById('err');
+    let app, model, bubbleTimer;
+
+    function showBubble(text) {
+      bubble.textContent = text || '';
+      bubble.classList.add('show');
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => bubble.classList.remove('show'), 3500);
+    }
+
+    function closePet() {
+      try {
+        if (window.PetBridge && window.PetBridge.close) {
+          window.PetBridge.close();
+          return;
+        }
+      } catch (e) {}
+      // fallback: hide self
+      document.body.style.display = 'none';
+    }
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closePet();
+    });
+
+    // Tell Android which zone is the drag handle
+    document.getElementById('drag').addEventListener('touchstart', () => {
+      try { if (window.PetBridge && window.PetBridge.setDragging) window.PetBridge.setDragging(true); } catch (e) {}
+    }, { passive: true });
+    document.getElementById('drag').addEventListener('touchend', () => {
+      try { if (window.PetBridge && window.PetBridge.setDragging) window.PetBridge.setDragging(false); } catch (e) {}
+    }, { passive: true });
+
+    async function init() {
+      if (typeof PIXI === 'undefined' || !PIXI.live2d) {
+        errBox.style.display = 'block';
+        errBox.textContent = 'Live2D 库未加载。请确认 Micro-AGI 服务在 8085/8087 运行。';
+        return;
+      }
+      try {
+        window.PIXI = PIXI;
+        const canvas = document.getElementById('canvas');
+        const wrap = document.getElementById('wrap');
+        app = new PIXI.Application({
+          view: canvas,
+          transparent: true,
+          autoStart: true,
+          antialias: true,
+          resizeTo: wrap,
+          resolution: Math.min(window.devicePixelRatio || 1, 2),
+          backgroundAlpha: 0
+        });
+        model = await PIXI.live2d.Live2DModel.from('/Hiyori/Hiyori.model3.json');
+        model.originalWidth = model.width;
+        model.originalHeight = model.height;
+        app.stage.addChild(model);
+        model.buttonMode = true;
+        model.interactive = true;
+        model.on('pointertap', () => {
+          const lines = [
+            '主人点我啦～🌸',
+            '有什么要我在 Termux 做的吗？',
+            '摸摸头，状态良好！',
+            '需要帮忙就喊我哦～'
+          ];
+          const t = lines[Math.floor(Math.random() * lines.length)];
+          try { model.motion(Math.random() > 0.5 ? 'Tap' : 'Tap@Body'); } catch (e) {}
+          showBubble(t);
+        });
+        layout();
+        window.addEventListener('resize', layout);
+        showBubble('桌宠已就绪');
+        try { if (window.PetBridge && window.PetBridge.ready) window.PetBridge.ready(); } catch (e) {}
+      } catch (e) {
+        errBox.style.display = 'block';
+        errBox.textContent = '加载失败: ' + (e && e.message ? e.message : e);
+      }
+    }
+
+    function layout() {
+      if (!model || !app) return;
+      try { if (typeof app.resize === 'function') app.resize(); } catch (e) {}
+      const nw = model.originalWidth || model.width || 400;
+      const nh = model.originalHeight || model.height || 400;
+      const h = app.screen.height || window.innerHeight;
+      const w = app.screen.width || window.innerWidth;
+      const scale = (h / nh) * 1.35;
+      model.scale.set(scale);
+      model.x = (w - nw * scale) / 2;
+      model.y = h * 0.02;
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

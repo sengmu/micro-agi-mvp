@@ -17,7 +17,8 @@ import re
 import socket
 import db
 
-PORT = 8085
+PORT = 8087
+active_auth_process = None
 
 # 1. Load config from local env
 def load_env() -> dict:
@@ -55,7 +56,7 @@ def refresh_google_token() -> str:
         print("refresh_google_token failed: GOOGLE_REFRESH_TOKEN not found in env")
         return ""
     
-    proxy_url = ENV_VARS.get("PROXY_URL", "http://127.0.0.1:7890")
+    proxy_url = ENV_VARS.get("PROXY_URL", "")
     if proxy_url:
         proxy_handler = urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url})
         opener = urllib.request.build_opener(proxy_handler)
@@ -104,6 +105,70 @@ def call_llm(messages: list) -> str:
     global ENV_VARS
     ENV_VARS = load_env() # Ensure latest config is read
     
+    # 支持本地自定义 Antigravity CLI (agy) 大模型引擎后端
+    llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
+    
+    if llm_backend == "agy":
+        user_prompt = ""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                user_prompt = msg.get("content", "")
+                break
+        if not user_prompt:
+            return "Error: No user message found in chat history."
+            
+        if isinstance(user_prompt, list):
+            for item in user_prompt:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    user_prompt = item.get("text", "")
+                    break
+                    
+        termux_home = "/data/data/com.termux/files/home"
+        termux_usr = "/data/data/com.termux/files/usr"
+        escaped_prompt = user_prompt.replace("'", "'\\''")
+        is_termux = os.path.exists("/data/data/com.termux")
+        
+        if is_termux:
+            cmd_str = (
+                "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
+                f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
+                f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
+                f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                f"-b {termux_home}/.local/glibc:/lib "
+                f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy "
+                f"--prompt '{escaped_prompt}'"
+            )
+            env = os.environ.copy()
+            env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+            env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+            env["PYTHONHOME"] = termux_usr
+            env["HOME"] = termux_home
+        else:
+            cmd_str = f"agy --prompt '{escaped_prompt}'"
+            env = os.environ.copy()
+            
+        try:
+            print(f"[LLM-AGY] Executing prompt: {user_prompt[:50]}...")
+            res = subprocess.run(
+                cmd_str,
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=60
+            )
+            if res.returncode == 0:
+                output = res.stdout.strip()
+                if "Welcome to the Antigravity CLI" in output:
+                    parts = output.split("--------------------------------------------------")
+                    if len(parts) > 1:
+                        output = parts[-1].strip()
+                return output
+            else:
+                return f"Error executing agy: {res.stderr.strip()}"
+        except Exception as e:
+            return f"Exception executing agy: {str(e)}"
+
     gemini_key = ENV_VARS.get("GEMINI_API_KEY")
     google_token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN")
     
@@ -113,7 +178,7 @@ def call_llm(messages: list) -> str:
         if "generativelanguage.googleapis.com" in ai_url or "gemini" in ai_url.lower():
             gemini_key = ENV_VARS.get("AI_KEY")
             
-    proxy_url = ENV_VARS.get("PROXY_URL", "http://127.0.0.1:7890")
+    proxy_url = ENV_VARS.get("PROXY_URL", "")
     use_google_api = bool(gemini_key or google_token)
     
     if use_google_api:
@@ -240,6 +305,391 @@ def call_llm(messages: list) -> str:
     return do_request(api_url, data, headers)
 
 
+def _llm_route_setup(messages: list):
+    """Resolve backend route: returns dict with mode, url, headers, payload, proxy_url, use_google."""
+    global ENV_VARS
+    ENV_VARS = load_env()
+    llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
+    proxy_url = ENV_VARS.get("PROXY_URL", "")
+
+    if llm_backend == "agy":
+        return {"mode": "agy", "proxy_url": proxy_url}
+
+    gemini_key = ENV_VARS.get("GEMINI_API_KEY")
+    google_token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN")
+    if not gemini_key and not google_token:
+        ai_url = ENV_VARS.get("AI_URL", "")
+        if "generativelanguage.googleapis.com" in ai_url or "gemini" in ai_url.lower():
+            gemini_key = ENV_VARS.get("AI_KEY")
+    use_google_api = bool(gemini_key or google_token)
+
+    if use_google_api:
+        model_name = ENV_VARS.get("AI_MODEL", "gemini-1.5-flash")
+        if "/" in model_name:
+            model_name = model_name.split("/")[-1]
+        if gemini_key:
+            api_url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model_name}:streamGenerateContent?alt=sse&key={gemini_key}"
+            )
+            headers = {"Content-Type": "application/json"}
+        else:
+            api_url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model_name}:streamGenerateContent?alt=sse"
+            )
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {google_token}",
+            }
+        contents = []
+        system_instruction = ""
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "system":
+                system_instruction = content if isinstance(content, str) else str(content)
+            elif role == "user":
+                if isinstance(content, list):
+                    # flatten multimodal to text for stream path; vision still via non-stream if needed
+                    texts = []
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            texts.append(item.get("text", ""))
+                        elif isinstance(item, dict) and item.get("type") == "image_url":
+                            texts.append("[image attached]")
+                    content = "\n".join(texts)
+                contents.append({"role": "user", "parts": [{"text": str(content)}]})
+            elif role == "assistant":
+                contents.append({"role": "model", "parts": [{"text": str(content)}]})
+        payload = {"contents": contents, "generationConfig": {"temperature": 0.3}}
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+        return {
+            "mode": "gemini_stream",
+            "api_url": api_url,
+            "headers": headers,
+            "payload": payload,
+            "proxy_url": proxy_url,
+            "google_token": google_token,
+        }
+
+    ai_url = ENV_VARS.get("AI_URL", "http://77.237.243.226:28085/v1")
+    ai_key = ENV_VARS.get("AI_KEY", "sk-1234567890abcdef")
+    ai_model = ENV_VARS.get("AI_MODEL", "gpt-3.5-turbo")
+    api_url = ai_url
+    if api_url and not api_url.endswith("/chat/completions"):
+        api_url = api_url.rstrip("/") + "/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {ai_key}",
+    }
+    # OpenAI-compatible: normalize multimodal messages if list content
+    norm_messages = []
+    for msg in messages:
+        m = dict(msg)
+        c = m.get("content")
+        if isinstance(c, list):
+            # keep list for vision-capable OpenAI endpoints
+            m["content"] = c
+        norm_messages.append(m)
+    payload = {
+        "model": ai_model,
+        "messages": norm_messages,
+        "temperature": 0.3,
+        "stream": True,
+    }
+    return {
+        "mode": "openai_stream",
+        "api_url": api_url,
+        "headers": headers,
+        "payload": payload,
+        "proxy_url": proxy_url,
+    }
+
+
+def call_llm_stream(messages: list):
+    """
+    Yield text chunks from the LLM. Non-stream backends (agy) yield a single chunk.
+    Falls back to call_llm() on stream failure.
+    """
+    setup = _llm_route_setup(messages)
+    mode = setup.get("mode")
+
+    if mode == "agy":
+        text = call_llm(messages)
+        if text:
+            yield text
+        return
+
+    proxy_url = setup.get("proxy_url") or ""
+    api_url = setup["api_url"]
+    headers = setup["headers"]
+    data = json.dumps(setup["payload"]).encode("utf-8")
+
+    def open_stream(url, req_headers, use_proxy=True):
+        if use_proxy and proxy_url:
+            proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            opener = urllib.request.build_opener(proxy_handler)
+        else:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        req = urllib.request.Request(url, data=data, headers=req_headers, method="POST")
+        return opener.open(req, timeout=90)
+
+    yielded = False
+    try:
+        try:
+            resp = open_stream(api_url, headers, use_proxy=True)
+        except Exception as e1:
+            # retry without proxy
+            if proxy_url:
+                print(f"[LLM-STREAM] proxy failed ({e1}), retry direct...")
+                resp = open_stream(api_url, headers, use_proxy=False)
+            else:
+                raise e1
+
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        # Some backends ignore stream=true and return a full JSON body
+        if "application/json" in ctype and "event-stream" not in ctype:
+            raw = resp.read().decode("utf-8", errors="ignore")
+            resp.close()
+            obj = json.loads(raw)
+            if mode == "gemini_stream":
+                text = obj["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                text = obj["choices"][0]["message"]["content"]
+            if text:
+                yielded = True
+                yield text
+            if not yielded:
+                raise RuntimeError("Empty JSON completion from LLM")
+            return
+
+        with resp:
+            if mode == "openai_stream":
+                buf = b""
+                while True:
+                    chunk = resp.read(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        line = line.strip()
+                        if not line or not line.startswith(b"data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if payload == b"[DONE]":
+                            if not yielded:
+                                break
+                            return
+                        try:
+                            obj = json.loads(payload.decode("utf-8", errors="ignore"))
+                        except Exception:
+                            continue
+                        try:
+                            delta = obj["choices"][0].get("delta") or {}
+                            piece = delta.get("content") or ""
+                            if piece:
+                                yielded = True
+                                yield piece
+                        except Exception:
+                            try:
+                                piece = obj["choices"][0]["message"]["content"]
+                                if piece:
+                                    yielded = True
+                                    yield piece
+                            except Exception:
+                                # surface API error objects
+                                err = obj.get("error") or obj.get("detail")
+                                if err:
+                                    raise RuntimeError(str(err))
+            elif mode == "gemini_stream":
+                buf = b""
+                while True:
+                    chunk = resp.read(256)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        line, buf = buf.split(b"\n", 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+                        if line.startswith(b"data:"):
+                            line = line[5:].strip()
+                        try:
+                            obj = json.loads(line.decode("utf-8", errors="ignore"))
+                        except Exception:
+                            continue
+                        try:
+                            parts = obj["candidates"][0]["content"]["parts"]
+                            for p in parts:
+                                t = p.get("text") or ""
+                                if t:
+                                    yielded = True
+                                    yield t
+                        except Exception:
+                            err = obj.get("error")
+                            if err:
+                                raise RuntimeError(str(err))
+        if not yielded:
+            raise RuntimeError("LLM stream ended with no content")
+    except Exception as e:
+        print(f"[LLM-STREAM] failed, fallback to non-stream: {e}")
+        try:
+            text = call_llm(messages)
+            if text:
+                yield text
+            else:
+                raise RuntimeError(f"Stream failed ({e}) and non-stream empty")
+        except Exception as e2:
+            raise RuntimeError(f"LLM unavailable: {e2}")
+
+
+def process_next_llm_step_stream():
+    """
+    Generator of SSE event dicts:
+      {"type":"token","text":...}
+      {"type":"done", status, response/command/thoughts, steps, node_id?}
+      {"type":"error","error":...}
+    """
+    collected = []
+    try:
+        for piece in call_llm_stream(SESSION["messages"]):
+            if not piece:
+                continue
+            collected.append(piece)
+            yield {"type": "token", "text": piece}
+    except Exception as e:
+        SESSION["is_waiting"] = False
+        yield {
+            "type": "done",
+            "status": "completed",
+            "response": f"API Error: Failed to contact AI brain. Details: {e}",
+            "steps": SESSION.get("steps", []),
+        }
+        return
+
+    ai_content = "".join(collected)
+    if not ai_content.strip():
+        ai_content = "（模型未返回内容）"
+
+    SESSION["messages"].append({"role": "assistant", "content": ai_content})
+    cmd = extract_execute_cmd(ai_content)
+    thoughts = get_thoughts(ai_content)
+
+    if cmd:
+        SESSION["is_waiting"] = True
+        SESSION["current_command"] = cmd
+        default_to = ENV_VARS.get("WXCLAW_DEFAULT_TO", "")
+        if default_to and ENV_VARS.get("WXCLAW_PUSH_ON_APPROVAL") == "true":
+            push_msg = (
+                f"🔔【智能体审批申请】\nHiyori 申请在 Termux 运行以下命令：\n\n"
+                f"```bash\n{cmd}\n```\n\n你可以前往网页端面板审批。"
+            )
+            threading.Thread(
+                target=run_wxclawbot_send, args=(default_to, push_msg), daemon=True
+            ).start()
+        yield {
+            "type": "done",
+            "status": "waiting_approval",
+            "command": cmd,
+            "thoughts": thoughts,
+            "steps": SESSION["steps"],
+            "response": ai_content,
+        }
+    else:
+        SESSION["is_waiting"] = False
+        node_id = extract_and_save_artifacts(
+            ai_content, SESSION.get("project_id", ""), SESSION.get("chat_id", "")
+        )
+        yield {
+            "type": "done",
+            "status": "completed",
+            "response": ai_content,
+            "steps": SESSION["steps"],
+            "node_id": node_id,
+        }
+
+
+def start_agent_run_stream(user_message: str, chat_history: list, project_id: str = "", chat_id: str = ""):
+    messages = [{"role": "system", "content": get_system_prompt()}]
+    for msg in chat_history:
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": user_message})
+    SESSION["messages"] = messages
+    SESSION["steps"] = []
+    SESSION["current_command"] = ""
+    SESSION["is_waiting"] = False
+    SESSION["project_id"] = project_id
+    SESSION["chat_id"] = chat_id
+    yield from process_next_llm_step_stream()
+
+
+def resume_agent_run_stream(approved: bool, edited_command: str = ""):
+    """Run command (if approved), then stream next LLM step."""
+    if not SESSION["is_waiting"]:
+        yield {"type": "error", "error": "No active session waiting for approval"}
+        return
+
+    cmd_to_run = edited_command if edited_command else SESSION["current_command"]
+
+    if approved:
+        print(f"Running approved command: {cmd_to_run}")
+        try:
+            res = subprocess.run(
+                cmd_to_run,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                cwd=str(pathlib.Path.home()),
+            )
+            stdout = res.stdout
+            stderr = res.stderr
+            exit_code = res.returncode
+        except subprocess.TimeoutExpired:
+            stdout, stderr, exit_code = "", "Command execution timed out after 20 seconds.", -1
+        except Exception as e:
+            stdout, stderr, exit_code = "", f"Execution error: {e}", -2
+
+        output_summary = stdout + stderr
+        if not output_summary.strip():
+            output_summary = "[Command completed with no output]"
+
+        SESSION["steps"].append({
+            "command": cmd_to_run,
+            "output": output_summary,
+            "exit_code": exit_code,
+        })
+        yield {
+            "type": "step",
+            "command": cmd_to_run,
+            "output": output_summary,
+            "exit_code": exit_code,
+        }
+        result_message = f"[Command execution result]\nExit Code: {exit_code}\nOutput:\n{output_summary}"
+    else:
+        print("Command execution denied by user")
+        result_message = "[Command execution denied by user]"
+        SESSION["steps"].append({
+            "command": cmd_to_run,
+            "output": "Execution denied by user.",
+            "exit_code": -3,
+        })
+        yield {
+            "type": "step",
+            "command": cmd_to_run,
+            "output": "Execution denied by user.",
+            "exit_code": -3,
+        }
+
+    SESSION["messages"].append({"role": "user", "content": result_message})
+    SESSION["is_waiting"] = False
+    SESSION["current_command"] = ""
+    yield from process_next_llm_step_stream()
+
 
 # 3. System Prompt explaining tools, security, and Android environment capabilities
 def get_system_prompt():
@@ -313,34 +763,48 @@ def extract_and_save_artifacts(ai_content: str, project_id: str, chat_id: str) -
         return str(uuid.uuid4())
         
     node_id = str(uuid.uuid4())
-    
-    # 1. Extract code blocks
+    important_langs = {
+        "html", "htm", "python", "py", "javascript", "js", "typescript", "ts",
+        "css", "vue", "react", "jsx", "tsx", "json", "bash", "sh", "sql",
+        "markdown", "md", "yaml", "yml", "go", "rust", "java", "kotlin",
+    }
+
+    # 1. Extract code blocks (more permissive so short useful snippets are kept)
     code_pattern = re.compile(r"```(\w+)?\n(.*?)```", re.DOTALL)
     for match in code_pattern.finditer(ai_content):
-        lang = match.group(1) or "text"
+        lang = (match.group(1) or "text").strip().lower()
         code_content = match.group(2).strip()
-        if len(code_content) < 50 and lang not in ["html", "python", "js", "css", "vue", "react"]:
+        if not code_content:
             continue
-            
-        title = f"{lang.capitalize()} Snippet"
-        # Try to find a better title from the preceding text
-        prefix_text = ai_content[:match.start()].strip()
-        lines = prefix_text.split('\n')
-        if lines:
-            last_line = lines[-1].strip()
-            if len(last_line) < 30 and ("代码" in last_line or "code" in last_line.lower()):
-                title = last_line.replace("：", "").replace(":", "")
+        # Keep short blocks for important langs; skip tiny noise for plain text
+        if lang in important_langs:
+            if len(code_content) < 12:
+                continue
+        elif len(code_content) < 40:
+            continue
 
-        preview = code_content[:100].replace("\n", " ") + "..."
+        lang_label = lang.upper() if len(lang) <= 4 else lang.capitalize()
+        line_count = code_content.count("\n") + 1
+        title = f"{lang_label} · {line_count} 行"
+        prefix_text = ai_content[:match.start()].strip()
+        lines = [ln.strip() for ln in prefix_text.split("\n") if ln.strip()]
+        if lines:
+            last_line = re.sub(r"^[#>*\-\d\.\s]+", "", lines[-1]).strip()
+            if 2 < len(last_line) <= 40:
+                title = f"{last_line} ({lang_label})"
+
+        preview = code_content[:140].replace("\n", " ")
+        if len(code_content) > 140:
+            preview += "…"
         db.create_artifact(
             project_id=project_id,
             chat_id=chat_id,
             node_id=node_id,
             title=title or "Code Snippet",
             type_enum="code",
-            content_url=code_content, 
+            content_url=code_content,
             preview_text=preview,
-            key_prompt=""
+            key_prompt=lang,
         )
 
     # 2. Extract image markdown ![title](url)
@@ -356,7 +820,7 @@ def extract_and_save_artifacts(ai_content: str, project_id: str, chat_id: str) -
             title=alt_text or "Image",
             type_enum="image",
             content_url=img_url,
-            preview_text="Image generated or referenced",
+            preview_text="图片素材 / 外链预览",
             key_prompt=""
         )
         
@@ -966,6 +1430,22 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode('utf-8'))
 
+    def _begin_sse(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-transform")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+    def _sse_send(self, event: dict):
+        try:
+            payload = json.dumps(event, ensure_ascii=False)
+            self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+
     def _parse_skill_md(self, path):
         try:
             content = path.read_text(encoding='utf-8')
@@ -985,6 +1465,7 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
         return None, None
 
     def do_GET(self):
+        global ENV_VARS
         # Strip query parameters for routing
         req_path = self.path.split("?")[0]
         
@@ -1056,7 +1537,7 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 f"client_id={client_id}&"
                 f"redirect_uri={urllib.parse.quote(redirect_uri)}&"
                 "response_type=code&"
-                "scope=https://www.googleapis.com/auth/generative-language&"
+                "scope=https://www.googleapis.com/auth/userinfo.email+https://www.googleapis.com/auth/cloud-platform&"
                 "access_type=offline&"
                 "prompt=consent"
             )
@@ -1083,6 +1564,7 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 return
             
             client_id = ENV_VARS.get("GOOGLE_CLIENT_ID", "884354919052-36trc1jjb3tguiac32ov6cod268c5blh.apps.googleusercontent.com")
+            client_secret = ENV_VARS.get("GOOGLE_CLIENT_SECRET", "")
             redirect_uri = "http://localhost:8085/oauth2callback"
             token_url = "https://oauth2.googleapis.com/token"
             payload = {
@@ -1091,9 +1573,11 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri
             }
+            if client_secret:
+                payload["client_secret"] = client_secret
             data = urllib.parse.urlencode(payload).encode("utf-8")
             
-            proxy_url = ENV_VARS.get("PROXY_URL", "http://127.0.0.1:7890")
+            proxy_url = ENV_VARS.get("PROXY_URL", "")
             if proxy_url:
                 proxy_handler = urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url})
                 opener = urllib.request.build_opener(proxy_handler)
@@ -1173,8 +1657,8 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
         elif req_path == "/api/system/google_status":
-            token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN", "")
-            refresh_token = ENV_VARS.get("GOOGLE_REFRESH_TOKEN", "")
+            ENV_VARS = load_env()
+            llm_backend = ENV_VARS.get("LLM_BACKEND", "gemini").lower()
             gemini_key = ENV_VARS.get("GEMINI_API_KEY", "")
             
             ai_url = ENV_VARS.get("AI_URL", "")
@@ -1182,15 +1666,49 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             ai_model = ENV_VARS.get("AI_MODEL", "")
             
             status = "disconnected"
-            if token or refresh_token:
-                status = "connected"
-                
+            
+            if llm_backend == "agy":
+                termux_home = "/data/data/com.termux/files/home"
+                termux_usr = "/data/data/com.termux/files/usr"
+                is_termux = os.path.exists("/data/data/com.termux")
+                if is_termux:
+                    cmd_str = (
+                        "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
+                        f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
+                        f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
+                        f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                        f"-b {termux_home}/.local/glibc:/lib "
+                        f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy status"
+                    )
+                    env = os.environ.copy()
+                    env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+                    env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+                    env["PYTHONHOME"] = termux_usr
+                    env["HOME"] = termux_home
+                else:
+                    cmd_str = "agy status"
+                    env = os.environ.copy()
+                    
+                try:
+                    res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, env=env, timeout=5)
+                    output = res.stdout.strip()
+                    if res.returncode == 0 and "not signed in" not in output:
+                        status = "connected"
+                except:
+                    pass
+            else:
+                token = ENV_VARS.get("GOOGLE_ACCESS_TOKEN", "")
+                refresh_token = ENV_VARS.get("GOOGLE_REFRESH_TOKEN", "")
+                if token or refresh_token:
+                    status = "connected"
+                    
             self._send_json({
                 "status": status,
                 "gemini_key": gemini_key,
                 "ai_url": ai_url,
                 "ai_key": ai_key,
-                "ai_model": ai_model
+                "ai_model": ai_model,
+                "llm_backend": llm_backend
             })
 
         # --- DB Artifacts API GET routes ---
@@ -1228,17 +1746,17 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     if "=" in item:
                         k, v = item.split("=", 1)
                         query_params[k] = urllib.parse.unquote(v)
-            project_id = query_params.get("project_id", "")
-            type_filter = query_params.get("type_filter", "")
-            
-            if not project_id:
-                projects = db.list_projects()
-                if projects:
-                    project_id = projects[0]["project_id"]
-            if project_id:
-                self._send_json(db.list_artifacts(project_id, type_filter))
-            else:
-                self._send_json([])
+            # project_id=all or missing → 全部工作区资产（更实用）
+            project_id = query_params.get("project_id", "all")
+            type_filter = query_params.get("type_filter", "all")
+            rows = db.list_artifacts(project_id, type_filter)
+            # 附加展示字段，减轻前端压力
+            for r in rows:
+                content = r.get("content_url") or ""
+                r["size"] = len(content)
+                r["lines"] = content.count("\n") + 1 if content and r.get("type") == "code" else 0
+                r["lang"] = (r.get("key_prompt") or "").strip()
+            self._send_json(rows)
 
         # --- Android Hardware API GET routes ---
         elif req_path == "/api/hardware/battery":
@@ -1461,10 +1979,138 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        global active_auth_process
         content_length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(content_length)
-        
-        if self.path == "/api/chat":
+        req_path = self.path.split("?", 1)[0]
+
+        # ---- Streaming chat (SSE) ----
+        if req_path == "/api/chat/stream":
+            try:
+                req_json = json.loads(post_data.decode("utf-8") or "{}")
+                user_msg = req_json.get("message", "")
+                history = req_json.get("history", [])
+                attachments = req_json.get("attachments", [])
+
+                if attachments:
+                    uploads_dir = pathlib.Path.home() / "micro-agi-mvp" / "uploads"
+                    uploads_dir.mkdir(parents=True, exist_ok=True)
+                    content_list = [{"type": "text", "text": user_msg}]
+                    saved_files_text = []
+                    for att in attachments:
+                        file_name = att.get("name", "unnamed_file")
+                        file_data_b64 = att.get("data", "")
+                        file_type = att.get("type", "")
+                        if file_data_b64.startswith("data:"):
+                            file_data_b64 = file_data_b64.split(",", 1)[1]
+                        save_path = uploads_dir / file_name
+                        try:
+                            save_path.write_bytes(base64.b64decode(file_data_b64))
+                            saved_files_text.append(str(save_path))
+                        except Exception as e:
+                            print(f"Error saving attachment {file_name}: {e}")
+                        if file_type.startswith("image/"):
+                            data_uri = f"data:{file_type};base64,{file_data_b64}"
+                            content_list.append({
+                                "type": "image_url",
+                                "image_url": {"url": data_uri},
+                            })
+                    if saved_files_text:
+                        append_txt = "\n\n[System Note: User has attached files to this message."
+                        has_image = any(
+                            f.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))
+                            for f in saved_files_text
+                        )
+                        if has_image:
+                            append_txt += " You CAN see the attached images directly in this message!"
+                        append_txt += " Files saved at:]\n"
+                        for p in saved_files_text:
+                            append_txt += f"- {p}\n"
+                        content_list[0]["text"] += append_txt
+                    if len(content_list) == 1:
+                        user_msg = content_list[0]["text"]
+                    else:
+                        user_msg = content_list
+
+                project_id = req_json.get("project_id", "")
+                chat_id = req_json.get("chat_id", "")
+                if not project_id:
+                    projects = db.list_projects()
+                    if projects:
+                        project_id = projects[0]["project_id"]
+                    else:
+                        project_id = db.create_project("默认工作区", "系统初始化的默认全局工作区")
+                if not chat_id:
+                    chat_id = db.create_chat(project_id, "新建对话")
+                else:
+                    db.update_chat_time(chat_id)
+
+                db_user_msg = user_msg
+                if isinstance(user_msg, list):
+                    for item in user_msg:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            db_user_msg = item.get("text", "")
+                            break
+                db.save_message(chat_id, "user", db_user_msg)
+
+                self._begin_sse()
+                self._sse_send({"type": "meta", "chat_id": chat_id, "project_id": project_id})
+                final_done = None
+                for event in start_agent_run_stream(user_msg, history, project_id, chat_id):
+                    if event.get("type") == "done":
+                        final_done = event
+                        event = dict(event)
+                        event["chat_id"] = chat_id
+                    self._sse_send(event)
+                if final_done and final_done.get("status") == "completed":
+                    db.save_message(chat_id, "assistant", final_done.get("response", ""))
+                self._sse_send({"type": "end"})
+            except Exception as e:
+                traceback.print_exc()
+                try:
+                    self._begin_sse()
+                except Exception:
+                    pass
+                try:
+                    self._sse_send({"type": "error", "error": str(e)})
+                    self._sse_send({"type": "end"})
+                except Exception:
+                    pass
+            return
+
+        # ---- Streaming approve (SSE) ----
+        if req_path == "/api/approve/stream":
+            try:
+                req_json = json.loads(post_data.decode("utf-8") or "{}")
+                approved = req_json.get("approved", True)
+                edited_command = req_json.get("edited_command", "")
+                self._begin_sse()
+                final_done = None
+                for event in resume_agent_run_stream(approved, edited_command):
+                    if event.get("type") == "done":
+                        final_done = event
+                        event = dict(event)
+                        event["chat_id"] = SESSION.get("chat_id", "")
+                    self._sse_send(event)
+                if final_done and final_done.get("status") == "completed":
+                    chat_id = SESSION.get("chat_id", "")
+                    if chat_id:
+                        db.save_message(chat_id, "assistant", final_done.get("response", ""))
+                self._sse_send({"type": "end"})
+            except Exception as e:
+                traceback.print_exc()
+                try:
+                    self._begin_sse()
+                except Exception:
+                    pass
+                try:
+                    self._sse_send({"type": "error", "error": str(e)})
+                    self._sse_send({"type": "end"})
+                except Exception:
+                    pass
+            return
+
+        if self.path == "/api/chat" or req_path == "/api/chat":
             try:
                 req_json = json.loads(post_data.decode('utf-8'))
                 user_msg = req_json.get("message", "")
@@ -1781,6 +2427,163 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self._send_json({"error": str(e)}, 500)
 
+        elif self.path == "/api/system/command":
+            try:
+                req_json = json.loads(post_data.decode('utf-8'))
+                cmd = req_json.get("cmd", "").strip()
+                if not cmd:
+                    self._send_json({"stdout": "", "stderr": "Error: Empty command"})
+                else:
+                    # 拦截并翻译 agy / antigravity 命令为完整的 Termux proot 物理执行链，解决 Alias 失效问题
+                    termux_home = "/data/data/com.termux/files/home"
+                    termux_usr = "/data/data/com.termux/files/usr"
+                    
+                    agy_real_command = (
+                        "LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 "
+                        f"proot -b {termux_usr}/etc/tls:/etc/ssl/certs "
+                        f"-b {termux_usr}/etc/resolv.conf:/etc/resolv.conf "
+                        f"-b {termux_usr}/etc/hosts:/etc/hosts "
+                        f"-b {termux_home}/.local/glibc:/lib "
+                        f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1 {termux_home}/.local/bin/agy"
+                    )
+                    
+                    if cmd == "agy":
+                        cmd = agy_real_command
+                    elif cmd.startswith("agy "):
+                        cmd = agy_real_command + cmd[3:]
+                    elif cmd == "antigravity":
+                        cmd = agy_real_command
+                    elif cmd.startswith("antigravity "):
+                        cmd = agy_real_command + cmd[11:]
+                        
+                    env = os.environ.copy()
+                    env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+                    env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+                    env["PYTHONHOME"] = termux_usr
+                    env["HOME"] = termux_home
+                    env["SHELL"] = termux_usr + "/bin/sh"
+                    
+                    res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30, env=env)
+                    self._send_json({
+                        "stdout": res.stdout,
+                        "stderr": res.stderr
+                    })
+            except subprocess.TimeoutExpired:
+                self._send_json({"stdout": "", "stderr": "Error: Command timed out after 30 seconds."})
+            except Exception as e:
+                self._send_json({"stdout": "", "stderr": f"Error executing command: {str(e)}"}, 500)
+
+        elif self.path == "/api/system/auth/init":
+            try:
+                import pty
+                if active_auth_process:
+                    try:
+                        os.close(active_auth_process[0])
+                    except:
+                        pass
+                    try:
+                        active_auth_process[1].terminate()
+                    except:
+                        pass
+                    active_auth_process = None
+                
+                termux_home = "/data/data/com.termux/files/home"
+                termux_usr = "/data/data/com.termux/files/usr"
+                
+                cmd_args = [
+                    f"{termux_usr}/bin/proot",
+                    "-b", f"{termux_usr}/etc/tls:/etc/ssl/certs",
+                    "-b", f"{termux_usr}/etc/resolv.conf:/etc/resolv.conf",
+                    "-b", f"{termux_usr}/etc/hosts:/etc/hosts",
+                    "-b", termux_home,
+                    "-b", f"{termux_home}/.local/glibc:/lib",
+                    f"{termux_home}/.local/glibc/ld-linux-aarch64.so.1",
+                    f"{termux_home}/.local/bin/agy"
+                ]
+                
+                env = os.environ.copy()
+                env["LANG"] = "C.UTF-8"
+                env["LANGUAGE"] = "C.UTF-8"
+                env["LC_ALL"] = "C.UTF-8"
+                env["PATH"] = termux_usr + "/bin:" + env.get("PATH", "")
+                env["LD_LIBRARY_PATH"] = termux_usr + "/lib"
+                env["PYTHONHOME"] = termux_usr
+                env["HOME"] = termux_home
+                
+                master_fd, slave_fd = pty.openpty()
+                proc = subprocess.Popen(
+                    cmd_args,
+                    shell=False,
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    close_fds=True,
+                    env=env
+                )
+                os.close(slave_fd)
+                
+                active_auth_process = (master_fd, proc)
+                
+                time.sleep(0.5)
+                os.write(master_fd, b"1\n")
+                
+                auth_url = ""
+                timeout_limit = time.time() + 10
+                buffer = ""
+                while time.time() < timeout_limit:
+                    try:
+                        r = os.read(master_fd, 1024).decode('utf-8', errors='ignore')
+                        if not r:
+                            break
+                        buffer += r
+                        if "https://" in buffer:
+                            urls = re.findall(r'https://\S+', buffer)
+                            if urls:
+                                auth_url = urls[0]
+                                break
+                    except OSError:
+                        break
+                        
+                if auth_url:
+                    self._send_json({"ok": True, "url": auth_url})
+                else:
+                    self._send_json({"ok": False, "message": "Failed to retrieve OAuth URL from TTY buffer."})
+            except Exception as e:
+                traceback.print_exc()
+                self._send_json({"ok": False, "message": str(e)}, 500)
+
+        elif self.path == "/api/system/auth/confirm":
+            try:
+                if not active_auth_process:
+                    self._send_json({"ok": False, "message": "No active authorization session. Please initialize again."})
+                    return
+                    
+                req_json = json.loads(post_data.decode('utf-8'))
+                code = req_json.get("code", "").strip()
+                if not code:
+                    self._send_json({"ok": False, "message": "Verification code is empty"})
+                    return
+                    
+                master_fd, proc = active_auth_process
+                os.write(master_fd, f"{code}\n".encode('utf-8'))
+                
+                time.sleep(3)
+                
+                try:
+                    os.close(master_fd)
+                except:
+                    pass
+                try:
+                    proc.terminate()
+                except:
+                    pass
+                active_auth_process = None
+                
+                self._send_json({"ok": True, "message": "Google Credentials submitted to agy client successfully!"})
+            except Exception as e:
+                traceback.print_exc()
+                self._send_json({"ok": False, "message": str(e)}, 500)
+
         elif self.path == "/api/hardware/clipboard":
             try:
                 req_json = json.loads(post_data.decode('utf-8'))
@@ -1805,7 +2608,6 @@ class AgentMVPHandler(http.server.SimpleHTTPRequestHandler):
                     self._send_json({"ok": True})
                     import threading
                     import sys
-                    import time
                     def exit_later():
                         time.sleep(1)
                         print("Updating server... exiting now to trigger auto-restart wrapper script.")
@@ -1989,6 +2791,71 @@ threading.Thread(target=battery_monitor_daemon, daemon=True).start()
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
+    allow_reuse_address = True
+
+class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        global active_auth_process
+        from urllib.parse import urlparse, parse_qs
+        parsed_path = urlparse(self.path)
+        params = parse_qs(parsed_path.query)
+        
+        code = params.get('code', [''])[0]
+        if code:
+            try:
+                if active_auth_process:
+                    master_fd, proc = active_auth_process
+                    os.write(master_fd, f"{code}\n".encode('utf-8'))
+                    time.sleep(3)
+                    try: os.close(master_fd)
+                    except: pass
+                    try: proc.terminate()
+                    except: pass
+                    active_auth_process = None
+            except Exception as e:
+                print(f"Error submitting OAuth code in background: {e}")
+        
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.end_headers()
+        html_content = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google 授权成功</title>
+    <style>
+        body { margin: 0; padding: 0; background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
+        .card { background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 20px; padding: 40px 30px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5), 0 0 30px rgba(56,189,248,0.2); max-width: 90%; width: 360px; }
+        .icon { font-size: 64px; margin-bottom: 20px; animation: bounce 1s infinite alternate; }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+        h1 { font-size: 22px; margin: 0 0 10px 0; color: #38bdf8; }
+        p { font-size: 15px; color: #94a3b8; line-height: 1.6; margin: 0 0 25px 0; }
+        .btn { background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #fff; border: none; padding: 12px 24px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 10px 15px -3px rgba(2, 132, 199, 0.4); text-decoration: none; display: inline-block; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">🎉</div>
+        <h1>Google 账号授权绑定成功！</h1>
+        <p>Antigravity CLI (agy) 已在手机终端底层完成深度绑定与智力融合！</p>
+        <div class="btn" onclick="window.close(); history.back();">返回 App 控制台</div>
+    </div>
+</body>
+</html>"""
+        self.wfile.write(html_content.encode('utf-8'))
+    def log_message(self, format, *args):
+        pass
+
+def run_oauth_server():
+    try:
+        oauthd = ThreadingHTTPServer(('', 8085), OAuthCallbackHandler)
+        print("🚀 Local OAuth Callback Server running on port 8085")
+        oauthd.serve_forever()
+    except Exception as e:
+        print(f"Error starting OAuth callback server on 8085: {e}")
+
+threading.Thread(target=run_oauth_server, daemon=True).start()
 
 def run_server():
     server_address = ('', PORT)
