@@ -8,7 +8,10 @@ on:
     paths:
       - "android_host/**"
       - ".github/workflows/build-agi-bot.yml"
-    branches: [main, master]
+    branches:
+      - main
+      - master
+      - "feat/**"
   pull_request:
     paths:
       - "android_host/**"
