@@ -1,16 +1,19 @@
 #!/bin/bash
-# Micro-AGI MVP Service Auto-Restart Daemon Wrapper
+# Start from the directory containing this script, regardless of its location.
+cd "$(dirname "$0")" || exit 1
 
-cd /data/data/com.termux/files/home/micro-agi-mvp
+if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 http://127.0.0.1:8087/api/health >/dev/null; then
+    echo "Micro-AGI is already running at http://127.0.0.1:8087/"
+    exit 0
+fi
 
-echo "=================================================="
-echo "🔄 Starting Micro-AGI Web Server Daemon..."
-echo "=================================================="
-
+echo "Starting Micro-AGI at http://127.0.0.1:8087/"
 while true; do
     python app.py
-    echo "=================================================="
-    echo "⚠️ Server exited. Auto-restarting in 2 seconds..."
-    echo "=================================================="
+    status=$?
+    if [ "$status" -ne 0 ]; then
+        echo "Micro-AGI exited with status $status. Check port 8087 and the error above."
+        exit "$status"
+    fi
     sleep 2
 done

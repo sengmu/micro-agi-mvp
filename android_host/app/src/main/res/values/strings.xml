@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Micro-AGI</string>
+    <!-- Owner-approved Devnet test identity. Verify favicon and publish Digital Asset Links before release. -->
+    <string name="solana_identity_uri" translatable="false">https://relayhub.cloud/</string>
+    <string name="solana_icon_path" translatable="false">favicon.ico</string>
+</resources>

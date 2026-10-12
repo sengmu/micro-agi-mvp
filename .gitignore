@@ -10,3 +10,25 @@ wechat_status.json
 .vscode/
 temp_pkg/node_modules/
 node_modules/
+
+# Android prototype and private runtime files
+__pycache__/
+*.pyc
+*.db
+*.log
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.pem
+*.key
+*.apk
+Hiyori/
+live2dcubismcore.min.js
+.android-tools/
+android_host/.gradle/
+android_host/.kotlin/
+android_host/**/build/
+android_host/local.properties
+

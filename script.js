@@ -2,6 +2,125 @@
         const chatInput = document.getElementById("chatInput");
         const sendBtn = document.getElementById("sendBtn");
         const quickTerminal = document.getElementById("quickTerminal");
+        window.microAgiEmbedded = null;
+        document.documentElement.classList.add('capabilities-pending');
+
+        function defaultChatPlaceholder() {
+            return window.microAgiEmbedded === false
+                ? '输入一条控制指令 (例如: 列出当前文件)...'
+                : '输入消息，和日和聊天…';
+        }
+
+        function markEmbeddedGoogleAuth(configured = false) {
+            const login = document.getElementById('google-settings-auth-btn');
+            if (login) {
+                login.disabled = true;
+                login.textContent = '账号登录待适配；可配置 API Key';
+                login.onclick = null;
+            }
+            const status = document.getElementById('google-login-status');
+            if (status) status.textContent = configured
+                ? '模型 API Key 已配置'
+                : '独立版需配置模型服务';
+            const hint = document.querySelector('#google-login-section .settings-hint');
+            if (hint) hint.textContent = '独立版请使用 API Key；密钥保存在应用私有目录，并用于调用模型服务。';
+        }
+
+        async function applyRuntimeCapabilities() {
+            try {
+                const response = await fetch('/api/health', { cache: 'no-store' });
+                if (!response.ok) return;
+                const health = await response.json();
+                if (typeof health.embedded !== 'boolean') return;
+                window.microAgiEmbedded = health.embedded;
+                chatInput.placeholder = defaultChatPlaceholder();
+                document.documentElement.classList.remove('capabilities-pending');
+                if (!window.microAgiEmbedded) return;
+                document.documentElement.classList.add('embedded-host');
+                for (const id of ['toggle-terminal-btn', 'suggestionsContainer',
+                                  'quickTerminal', 'settings-pane-wechat-section',
+                                  'settings-tunnel-section', 'settings-termux-row',
+                                  'aios-termux-controls', 'attachBtn']) {
+                    const element = document.getElementById(id);
+                    if (element) element.style.setProperty('display', 'none', 'important');
+                }
+                const fileUpload = document.getElementById('file-upload');
+                if (fileUpload) fileUpload.disabled = true;
+                markEmbeddedGoogleAuth();
+                simplifyEmbeddedSettings();
+                const update = document.getElementById('system-update-ver');
+                if (update) update.textContent = '独立版请通过安装包更新';
+                const updateButton = document.getElementById('system-update-btn');
+                if (updateButton) updateButton.style.display = 'none';
+                const memoryHint = document.getElementById('aios-memory-hint');
+                if (memoryHint) memoryHint.textContent =
+                    '长期记忆保存在应用内；主动通知和简报待 Android 原生适配。';
+            } catch (error) {
+                console.warn('Unable to read runtime capabilities', error);
+            }
+        }
+        function setModelProvider(provider) {
+            if (!window.microAgiEmbedded) return;
+            const choice = provider === 'gemini' ? 'gemini' : 'compatible';
+            const select = document.getElementById('model-provider');
+            if (select) select.value = choice;
+            for (const [id, visible] of [
+                ['gemini-model-fields', choice === 'gemini'],
+                ['compatible-model-fields', choice === 'compatible']
+            ]) {
+                const group = document.getElementById(id);
+                if (group) group.hidden = !visible;
+            }
+        }
+
+        function simplifyEmbeddedSettings() {
+            if (typeof document.querySelectorAll !== 'function') return;
+            const names = {1: '外观', 2: '桌宠', 3: '聊天模型'};
+            document.querySelectorAll('.settings-tab').forEach(tab => {
+                const index = Number(tab.dataset.settingsTab);
+                tab.hidden = !names[index];
+                if (names[index]) tab.textContent = names[index];
+            });
+            const modelStatus = document.getElementById('google-login-status');
+            if (modelStatus && modelStatus.parentElement) {
+                modelStatus.parentElement.replaceChildren(modelStatus);
+                const heading = modelStatus.closest('section').querySelector('h4');
+                if (heading) heading.textContent = '聊天模型';
+            }
+            const pet = document.getElementById('settings-native-pet');
+            if (pet) {
+                const title = pet.querySelector('.settings-row-title');
+                const description = pet.querySelector('.settings-row-desc');
+                if (title) title.textContent = '悬浮桌宠';
+                if (description) description.textContent = '让角色陪你使用其他应用，可随时关闭。首次开启需允许悬浮窗权限。';
+            }
+            const petSection = document.getElementById('settings-pet-section');
+            if (petSection) {
+                const subtitle = petSection.querySelector('.settings-section-head p');
+                if (subtitle) subtitle.textContent = '开启或关闭手机上的悬浮角色';
+                const localPetRow = document.getElementById('settings-pet-checkbox');
+                if (localPetRow) localPetRow.closest('label').hidden = true;
+            }
+            const interact = document.getElementById('settings-pane-interact');
+            const memory = document.getElementById('settings-memory-section');
+            if (interact && memory && !document.getElementById('embedded-memory-details')) {
+                const details = document.createElement('details');
+                details.id = 'embedded-memory-details';
+                details.className = 'settings-disclosure';
+                const summary = document.createElement('summary');
+                summary.textContent = '记忆与对话偏好';
+                details.append(summary, memory);
+                const chatToggle = document.getElementById('settings-chat-checkbox');
+                if (chatToggle) details.append(chatToggle.closest('label'));
+                interact.append(details);
+            }
+            setModelProvider('compatible');
+            const tab = Number(localStorage.getItem('micro-agi-settings-tab'));
+            switchSettingsTab([1, 2, 3].includes(tab) ? tab : 3);
+        }
+        window.addEventListener('DOMContentLoaded', () => {
+            window.microAgiCapabilitiesReady = applyRuntimeCapabilities();
+        });
 
         let chatHistory = [];
         let currentChatId = "";
@@ -56,7 +175,7 @@
                 isRecording = true;
                 const micBtn = document.getElementById("micBtn");
                 if (micBtn) micBtn.classList.add("recording");
-                chatInput.placeholder = "正在聆听指令...";
+                chatInput.placeholder = "正在聆听…";
             };
 
             recognition.onresult = (event) => {
@@ -93,7 +212,7 @@
                     chatInput.placeholder = "🎙️ 语音识别出错: " + event.error;
                 }
                 setTimeout(() => {
-                    chatInput.placeholder = "输入一条控制指令 (例如: 列出当前文件)...";
+                    chatInput.placeholder = defaultChatPlaceholder();
                 }, 3000);
             };
 
@@ -112,7 +231,7 @@
             }
             const micBtn = document.getElementById("micBtn");
             if (micBtn) micBtn.classList.remove("recording");
-            chatInput.placeholder = "输入一条控制指令 (例如: 列出当前文件)...";
+            chatInput.placeholder = defaultChatPlaceholder();
         }
 
         function toggleVoiceInput() {
@@ -123,7 +242,7 @@
             if (!recognition) {
                 chatInput.placeholder = "🎙️ 浏览器不支持语音输入";
                 setTimeout(() => {
-                    chatInput.placeholder = "输入一条控制指令 (例如: 列出当前文件)...";
+                    chatInput.placeholder = defaultChatPlaceholder();
                 }, 3000);
                 return;
             }
@@ -350,34 +469,129 @@
                 item.style.gap = "6px";
                 item.style.border = "1px solid rgba(255,255,255,0.1)";
                 
-                let contentHtml = "";
                 if (att.status === 'reading') {
-                    contentHtml = `
-                        <div style="position: absolute; bottom: 0; left: 0; height: 2px; background: var(--primary); width: ${att.progress}%; transition: width 0.1s;" id="progress-${att.id}"></div>
-                        ⏳ <span>读取中...</span>
-                    `;
+                    const progress = document.createElement('div');
+                    progress.style.cssText = 'position:absolute;bottom:0;left:0;height:2px;background:var(--primary);transition:width 0.1s;';
+                    progress.style.width = `${Math.max(0, Math.min(100, Number(att.progress) || 0))}%`;
+                    progress.id = `progress-${att.id}`;
+                    item.append(progress, document.createTextNode('⏳ 读取中...'));
                 } else if (att.status === 'error') {
-                    contentHtml = `❌ <span style="color:red;">读取失败</span>`;
+                    const error = document.createElement('span');
+                    error.style.color = 'red';
+                    error.textContent = '读取失败';
+                    item.append(document.createTextNode('❌ '), error);
                 } else {
-                    let icon = "📄";
                     if (att.type === 'skill') {
-                        icon = "🔌";
+                        item.append(document.createTextNode('🔌'));
                         item.style.background = "linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.2))";
                         item.style.borderColor = "var(--primary)";
                         item.style.color = "#cffafe";
                     } else if (att.type.startsWith("image/") && att.data) {
-                        icon = `<img src="${att.data}" style="width:24px; height:24px; object-fit:cover; border-radius:4px;">`;
+                        const image = document.createElement('img');
+                        image.src = att.data;
+                        image.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;';
+                        item.appendChild(image);
+                    } else {
+                        item.append(document.createTextNode('📄'));
                     }
-                    contentHtml = `
-                        ${icon}
-                        <span style="max-width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${att.name}">${att.name}</span>
-                        <button class="remove-btn" onclick="removeAttachment('${att.id}')" style="background:none; border:none; color:var(--error); cursor:pointer; padding:2px; font-size:1.1rem; line-height:1;">×</button>
-                    `;
+                    const name = document.createElement('span');
+                    name.style.cssText = 'max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+                    name.title = att.name;
+                    name.textContent = att.name;
+                    const remove = document.createElement('button');
+                    remove.className = 'remove-btn';
+                    remove.style.cssText = 'background:none;border:none;color:var(--error);cursor:pointer;padding:2px;font-size:1.1rem;line-height:1;';
+                    remove.textContent = '×';
+                    remove.addEventListener('click', () => removeAttachment(att.id));
+                    item.append(name, remove);
                 }
-                
-                item.innerHTML = contentHtml;
                 previewContainer.appendChild(item);
             });
+        }
+
+        // ===== Streaming helpers (SSE) =====
+        function removeLoadingBubbles() {
+            document.querySelectorAll(".loading-dots").forEach(d => {
+                try { d.parentElement.parentElement.parentElement.remove(); } catch (e) {}
+            });
+            const legacy = document.getElementById("stream-msg");
+            // keep stream-msg if actively streaming
+        }
+
+        function ensureStreamBubble() {
+            let msg = document.getElementById("stream-msg");
+            if (msg) return msg;
+            removeLoadingBubbles();
+            msg = document.createElement("div");
+            msg.className = "message assistant";
+            msg.id = "stream-msg";
+            msg.innerHTML = `
+                <div class="message-avatar">HY</div>
+                <div class="message-content">
+                    <span class="message-sender">Hiyori <span style="opacity:.5;font-size:.7rem;">流式</span></span>
+                    <div class="message-bubble stream-bubble-body" style="white-space:pre-wrap;word-break:break-word;"><span class="stream-cursor" style="opacity:.7;animation:blink 1s step-end infinite;">▋</span></div>
+                </div>
+            `;
+            chatArea.appendChild(msg);
+            if (!document.getElementById("stream-blink-style")) {
+                const st = document.createElement("style");
+                st.id = "stream-blink-style";
+                st.textContent = "@keyframes blink{50%{opacity:0}}";
+                document.head.appendChild(st);
+            }
+            return msg;
+        }
+
+        function updateStreamBubble(fullText) {
+            const msg = ensureStreamBubble();
+            const body = msg.querySelector(".stream-bubble-body");
+            // Hide raw execute tags mid-stream without promising a command
+            // approval flow which the standalone app deliberately disables.
+            let display = fullText;
+            const execIdx = display.indexOf("<execute>");
+            if (execIdx !== -1) {
+                display = display.slice(0, execIdx).trimEnd() +
+                    (window.microAgiEmbedded === false
+                        ? "\n\n⏳ 准备申请执行命令…"
+                        : "\n\n（独立版不支持命令执行；本次不会执行任何命令。）");
+            }
+            body.innerHTML = escapeHtml(display).replace(/\n/g, "<br>") +
+                '<span class="stream-cursor" style="opacity:.7;animation:blink 1s step-end infinite;">▋</span>';
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function clearStreamBubble() {
+            const msg = document.getElementById("stream-msg");
+            if (msg) msg.remove();
+        }
+
+        async function consumeSSE(response, handlers) {
+            if (!response.ok) {
+                const t = await response.text().catch(() => "");
+                throw new Error("HTTP " + response.status + " " + t.slice(0, 120));
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                let sep;
+                while ((sep = buffer.indexOf("\n\n")) !== -1) {
+                    const block = buffer.slice(0, sep);
+                    buffer = buffer.slice(sep + 2);
+                    const lines = block.split("\n");
+                    for (const line of lines) {
+                        if (!line.startsWith("data:")) continue;
+                        const raw = line.slice(5).trim();
+                        if (!raw || raw === "[DONE]") continue;
+                        let ev;
+                        try { ev = JSON.parse(raw); } catch (e) { continue; }
+                        if (handlers && handlers.onEvent) handlers.onEvent(ev);
+                    }
+                }
+            }
         }
 
         async function sendMessage() {
@@ -430,20 +644,20 @@
             }
 
             // Append User Message UI
-            let displayHtml = text;
+            let displayHtml = escapeHtml(text).replace(/\n/g, "<br>");
             if (currentAttachments.length > 0) {
                 let attHtml = `<div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">`;
                 currentAttachments.forEach(att => {
                     if (att.type === 'skill') {
-                        attHtml += `<span style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.2)); color: #cffafe; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--primary); font-size: 0.8rem;">🔌 技能: ${att.name}</span>`;
+                        attHtml += `<span style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(139, 92, 246, 0.2)); color: #cffafe; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--primary); font-size: 0.8rem;">🔌 技能: ${escapeHtml(att.name)}</span>`;
                     } else if (att.type.startsWith("image/")) {
                         attHtml += `<img src="${att.data}" style="max-width: 200px; max-height: 200px; border-radius: 4px; object-fit: cover;">`;
                     } else {
-                        attHtml += `<span style="background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">📄 ${att.name}</span>`;
+                        attHtml += `<span style="background: rgba(0,0,0,0.2); padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">📄 ${escapeHtml(att.name)}</span>`;
                     }
                 });
                 attHtml += `</div>`;
-                displayHtml = attHtml + (text ? `<div>${text}</div>` : "");
+                displayHtml = attHtml + (text ? `<div>${escapeHtml(text).replace(/\n/g, "<br>")}</div>` : "");
             }
 
             // Construct payload for LLM
@@ -469,7 +683,7 @@
             }
 
             appendMessage("user", "您", displayHtml, true);
-            const loadingId = appendLoading();
+            appendLoading();
             chatArea.scrollTop = chatArea.scrollHeight;
 
             // Trigger Live2D thinking state and cancel previous speech
@@ -478,10 +692,14 @@
                 live2dModel.motion('FlickDown');
             }
 
+            let streamedText = "";
+            let finalData = null;
+            let streamError = null;
+
             try {
-                const response = await fetch("/api/chat", {
+                const response = await fetch("/api/chat/stream", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
                     body: JSON.stringify({
                         message: finalPayloadText,
                         history: chatHistory,
@@ -491,51 +709,71 @@
                     signal: currentController.signal
                 });
 
-                const data = await response.json();
-                
-                // If backend returned a chat_id and our currentChatId was empty, set it
-                if (data.chat_id && currentChatId === "") {
-                    currentChatId = data.chat_id;
-                    const title = text ? (text.slice(0, 16) + (text.length > 16 ? "..." : "")) : "新对话";
-                    const headerTitle = document.getElementById('header-chat-title');
-                    if (headerTitle) {
-                        headerTitle.textContent = title;
+                await consumeSSE(response, {
+                    onEvent: (ev) => {
+                        if (ev.type === "meta" && ev.chat_id) {
+                            if (!currentChatId) {
+                                currentChatId = ev.chat_id;
+                                loadChatSessions(false);
+                            } else {
+                                currentChatId = ev.chat_id;
+                            }
+                        } else if (ev.type === "token" && ev.text) {
+                            streamedText += ev.text;
+                            updateStreamBubble(streamedText);
+                        } else if (ev.type === "done") {
+                            finalData = ev;
+                        } else if (ev.type === "error") {
+                            streamError = ev.error || "未知流式错误";
+                        }
                     }
-                    loadChatSessions(false);
-                }
+                });
 
-                // Remove loading regardless of completion
-                const loadingDots = document.querySelectorAll(".loading-dots");
-                loadingDots.forEach(d => d.parentElement.parentElement.parentElement.remove());
-
-                if (data.error) {
-                    appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
-                    if (live2dModel) {
-                        live2dModel.motion('Flick');
+                if (streamError) {
+                    clearStreamBubble();
+                    removeLoadingBubbles();
+                    const partial = streamedText
+                        ? escapeHtml(streamedText).replace(/\n/g, "<br>") + "<br><br>"
+                        : "";
+                    appendMessage("assistant", streamedText ? "Hiyori" : "系统错误",
+                        partial + `⚠️ 回答未完整结束；未自动重试。${escapeHtml(streamError)}`);
+                    if (live2dModel) live2dModel.motion('Flick');
+                } else if (finalData) {
+                    // Replace raw stream bubble with polished final render
+                    clearStreamBubble();
+                    removeLoadingBubbles();
+                    if (finalData.chat_id && !currentChatId) {
+                        currentChatId = finalData.chat_id;
                     }
-                    if (isVoiceEnabled) {
-                        speakText("发生了一些错误，请主人检查后台日志。");
-                    }
+                    handleAgentResponse(finalData, text || "[包含附件的消息]");
+                } else if (streamedText) {
+                    clearStreamBubble();
+                    removeLoadingBubbles();
+                    appendMessage("assistant", "Hiyori",
+                        escapeHtml(streamedText).replace(/\n/g, "<br>") +
+                        "<br><br>⚠️ 回答未完整结束；未自动重试，以避免重复消耗 API 额度。");
                 } else {
-                    handleAgentResponse(data, text || "[包含附件的消息]");
+                    removeLoadingBubbles();
+                    appendMessage("assistant", "Hiyori", "（没有收到模型输出）");
                 }
             } catch (err) {
-                const loadingDots = document.querySelectorAll(".loading-dots");
-                loadingDots.forEach(d => d.parentElement.parentElement.parentElement.remove());
+                clearStreamBubble();
+                removeLoadingBubbles();
                 
                 if (err.name === 'AbortError') {
-                    appendMessage("assistant", "Hiyori", "⚠️ 对话已被您手动打断。");
+                    appendMessage("assistant", "Hiyori", streamedText
+                        ? escapeHtml(streamedText).replace(/\n/g, "<br>") + "<br><br>⚠️ 对话已被您手动打断。"
+                        : "⚠️ 对话已被您手动打断。");
                     if (live2dModel) {
                         live2dModel.motion('Idle');
                     }
                 } else {
-                    appendMessage("assistant", "连接失败", `无法连接: ${err.message}`);
-                    if (live2dModel) {
-                        live2dModel.motion('Flick');
-                    }
-                    if (isVoiceEnabled) {
-                        speakText("无法连接到后台服务，请检查网络。");
-                    }
+                    const partial = streamedText
+                        ? escapeHtml(streamedText).replace(/\n/g, "<br>") + "<br><br>"
+                        : "";
+                    appendMessage("assistant", "连接中断", partial +
+                        `⚠️ 流式请求失败；为避免重复消耗 API 额度，未自动重试。请确认后手动重发。${escapeHtml(err.message || '')}`);
+                    if (live2dModel) live2dModel.motion('Flick');
                 }
             } finally {
                 chatInput.disabled = false;
@@ -555,7 +793,7 @@
             if (data.status === "waiting_approval") {
                 // 1. Show Thoughts
                 if (data.thoughts) {
-                    appendMessage("assistant", "Micro-AGI", data.thoughts);
+                    appendMessage("assistant", "Micro-AGI", escapeHtml(data.thoughts).replace(/\n/g, "<br>"));
                 }
                 
                 // 2. Render Approval Card
@@ -589,7 +827,7 @@
                 }
                 
                 // Re-enable inputs
-                chatInput.placeholder = "输入一条控制指令 (例如: 列出当前文件)...";
+                chatInput.placeholder = defaultChatPlaceholder();
 
                 // Live2D feedback and speak
                 if (live2dModel) {
@@ -625,7 +863,7 @@
                         <span>🌸 主人，请批准运行命令：</span>
                     </div>
                     <div class="approval-bubble-cmd-container">
-                        <textarea class="approval-bubble-cmd" id="approval-bubble-cmd">${command}</textarea>
+                        <textarea class="approval-bubble-cmd" id="approval-bubble-cmd">${escapeHtml(command)}</textarea>
                     </div>
                     <div class="approval-bubble-actions">
                         <button class="approval-bubble-btn deny" onclick="submitBubbleApproval(false)">拒绝</button>
@@ -702,9 +940,9 @@
 
         async function submitApprovalFlow(approved, editedCommand) {
             const cardId = currentCardId;
-            if (!cardId) return;
+            // cardId optional for bubble-only flow
 
-            const loadingId = appendLoading();
+            appendLoading();
             chatArea.scrollTop = chatArea.scrollHeight;
             
             chatInput.disabled = true;
@@ -712,35 +950,82 @@
             setSendBtnState(true);
             currentController = new AbortController();
 
+            let streamedText = "";
+            let finalData = null;
+            let streamError = null;
+
             try {
-                const response = await fetch("/api/approve", {
+                const response = await fetch("/api/approve/stream", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ approved: approved, edited_command: editedCommand }),
+                    headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+                    body: JSON.stringify({ approved: approved, edited_command: editedCommand, chat_id: currentChatId }),
                     signal: currentController.signal
                 });
 
-                const data = await response.json();
-                document.getElementById(loadingId).remove();
+                await consumeSSE(response, {
+                    onEvent: (ev) => {
+                        if (ev.type === "token" && ev.text) {
+                            streamedText += ev.text;
+                            updateStreamBubble(streamedText);
+                        } else if (ev.type === "done") {
+                            finalData = ev;
+                        } else if (ev.type === "error") {
+                            streamError = ev.error || "审批流错误";
+                        } else if (ev.type === "step") {
+                            // command finished; keep loading until tokens arrive
+                        }
+                    }
+                });
 
-                if (data.error) {
-                    appendMessage("assistant", "系统错误", `执行发生错误: ${data.error}`);
+                clearStreamBubble();
+                removeLoadingBubbles();
+
+                if (streamError) {
+                    appendMessage("assistant", "系统错误", `执行发生错误: ${escapeHtml(streamError)}`);
+                } else if (finalData) {
+                    handleAgentResponse(finalData);
+                } else if (streamedText) {
+                    handleAgentResponse({ status: "completed", response: streamedText, steps: [] });
                 } else {
-                    handleAgentResponse(data);
+                    // fallback non-stream
+                    const response2 = await fetch("/api/approve", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ approved: approved, edited_command: editedCommand, chat_id: currentChatId }),
+                        signal: currentController.signal
+                    });
+                    const data = await response2.json();
+                    if (data.error) {
+                        appendMessage("assistant", "系统错误", `执行发生错误: ${escapeHtml(data.error)}`);
+                    } else {
+                        handleAgentResponse(data);
+                    }
                 }
             } catch (err) {
-                if (document.getElementById(loadingId)) document.getElementById(loadingId).remove();
-                
-                if (err.name === 'AbortError') {
-                    appendMessage("assistant", "Hiyori", "⚠️ 命令执行与对话已被您手动打断。");
-                } else {
-                    appendMessage("assistant", "连接失败", `无法连接: ${err.message}`);
+                clearStreamBubble();
+                removeLoadingBubbles();
+                try {
+                    const response = await fetch("/api/approve", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ approved: approved, edited_command: editedCommand, chat_id: currentChatId }),
+                        signal: currentController.signal
+                    });
+                    const data = await response.json();
+                    if (data.error) {
+                        appendMessage("assistant", "系统错误", `执行发生错误: ${escapeHtml(data.error)}`);
+                    } else {
+                        handleAgentResponse(data);
+                    }
+                } catch (err2) {
+                    appendMessage("assistant", "连接失败", `无法连接: ${escapeHtml(err.message)}`);
                 }
             } finally {
                 chatInput.disabled = false;
                 document.getElementById("attachBtn").disabled = false;
                 setSendBtnState(false);
                 currentController = null;
+                chatInput.placeholder = defaultChatPlaceholder();
             }
         }
 
@@ -788,8 +1073,8 @@
         }
 
         function escapeHtml(unsafe) {
-            if (!unsafe) return "";
-            return unsafe.toString()
+            if (unsafe === null || unsafe === undefined) return "";
+            return String(unsafe)
                  .replace(/&/g, "&amp;")
                  .replace(/</g, "&lt;")
                  .replace(/>/g, "&gt;")
@@ -824,8 +1109,9 @@
         }
 
         function appendAssistantMessage(response, steps, nodeId = null) {
-            // Simple markdown parsing for text
-            let parsedContent = (response || "").replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
+            // Keep generated code-block HTML separate while escaping all model text.
+            const codeBlocks = [];
+            let parsedContent = String(response || "").replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
                 const encodedCode = encodeURIComponent(code).replace(/'/g, "%27");
                 const escapedCode = escapeHtml(code);
                 let html = `
@@ -840,18 +1126,21 @@
                         <pre class="code-pre" style="margin: 0; padding: 10px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.78rem; color: var(--term-text); line-height: 1.4; max-width: 100%; box-sizing: border-box; background: var(--code-block-bg);"><code>${escapedCode}</code></pre>
                     </div>
                 `;
-                if (lang.toLowerCase() === 'html' || lang.toLowerCase() === 'htm') {
+                // Embedded CSP intentionally forbids frames. Do not advertise
+                // a preview action which cannot load inside the Android host.
+                if (window.microAgiEmbedded === false &&
+                        (lang.toLowerCase() === 'html' || lang.toLowerCase() === 'htm')) {
                     html += `<div style="margin-bottom: 8px;"><button class="tool-btn" style="font-size: 0.75rem; padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;" onclick="openLivePreview(decodeURIComponent('${encodedCode}'))">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                         沙盒预览 (Split-Screen)
                     </button></div>`;
                 }
-                return html;
+                return `\u0000CODE_${codeBlocks.push(html) - 1}\u0000`;
             });
             // Fallback for ``` without lang
             parsedContent = parsedContent.replace(/```([\s\S]*?)```/g, function(match, code) {
                 const escapedCode = escapeHtml(code);
-                return `
+                const html = `
                     <div class="code-block-container" style="margin: 12px 0; border-radius: 8px; border: 1px solid var(--term-border); overflow: hidden; background: var(--term-bg); box-shadow: var(--term-glow);">
                         <div class="code-block-header" style="background: var(--term-header-bg); padding: 6px 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--term-border); user-select: none;">
                             <span class="code-block-lang" style="font-size: 0.65rem; color: var(--term-text); font-weight: bold; text-transform: uppercase;">text</span>
@@ -863,10 +1152,13 @@
                         <pre class="code-pre" style="margin: 0; padding: 10px; overflow-x: auto; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.78rem; color: var(--term-text); line-height: 1.4; max-width: 100%; box-sizing: border-box; background: var(--code-block-bg);"><code>${escapedCode}</code></pre>
                     </div>
                 `;
+                return `\u0000CODE_${codeBlocks.push(html) - 1}\u0000`;
             });
+            parsedContent = escapeHtml(parsedContent);
             parsedContent = parsedContent.replace(/`([^`]+)`/g, '<code style="background: rgba(255,255,255,0.1); padding: 2px 4px; border-radius: 4px; color: #fbd38d;">$1</code>');
             parsedContent = parsedContent.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             parsedContent = parsedContent.replace(/\n/g, '<br>');
+            parsedContent = parsedContent.replace(/\u0000CODE_(\d+)\u0000/g, (_, index) => codeBlocks[Number(index)] || "");
 
             const stepsHtml = (steps || []).map((step, idx) => {
                 const stepId = `step-detail-${Date.now()}-${idx}`;
@@ -1092,6 +1384,18 @@
             checkTunnelStatus(); // Fetch tunnel status on open
             
             startWeChatPolling();
+
+            // Restore last settings tab (default 总控=0); refresh AIOS status
+            try {
+                let tab = parseInt(localStorage.getItem('micro-agi-settings-tab') || '0', 10);
+                if (isNaN(tab) || tab < 0 || tab > 4) tab = 0;
+                if (typeof switchSettingsTab === 'function') switchSettingsTab(tab);
+            } catch (e) {
+                if (typeof switchSettingsTab === 'function') switchSettingsTab(0);
+            }
+            if (typeof aiosLoadStatus === 'function') {
+                setTimeout(aiosLoadStatus, 120);
+            }
         }
 
         function closeMoreMenu() {
@@ -1506,10 +1810,40 @@
             }
             
             live2dModel.motion(randomMotion);
-            showWelcomeBubble(randomText);
+            if (isPetMode()) {
+                showPetMiniBubble(randomText);
+            } else {
+                showWelcomeBubble(randomText);
+            }
             
             if (isVoiceEnabled) {
                 speakText(randomText);
+            }
+        }
+
+        function triggerMotionByText(text) {
+            if (!live2dModel || !text) return;
+            
+            const lowerText = text.toLowerCase();
+            let selectedMotion = 'Idle';
+            
+            if (lowerText.includes('错') || lowerText.includes('坏') || lowerText.includes('警告') || lowerText.includes('危险') || lowerText.includes('失败') || lowerText.includes('error')) {
+                selectedMotion = 'Flick@Body';
+            } else if (lowerText.includes('好') || lowerText.includes('成功') || lowerText.includes('完成') || lowerText.includes('完成啦') || lowerText.includes('喜') || lowerText.includes('谢')) {
+                selectedMotion = 'Tap@Body';
+            } else if (lowerText.includes('听') || lowerText.includes('问') || lowerText.includes('想') || lowerText.includes('思考') || lowerText.includes('呢')) {
+                selectedMotion = 'Tap';
+            } else if (lowerText.includes('跑') || lowerText.includes('启动') || lowerText.includes('运行') || lowerText.includes('命令行')) {
+                selectedMotion = 'Flick';
+            } else {
+                // Random motion
+                selectedMotion = Math.random() > 0.5 ? 'Tap' : 'Idle';
+            }
+            
+            try {
+                live2dModel.motion(selectedMotion);
+            } catch (e) {
+                console.error("Failed to trigger Live2D motion:", e);
             }
         }
 
@@ -1559,11 +1893,17 @@
             
             const baseScale = nativeHeight > 0 ? (live2dContainer.clientHeight / nativeHeight) : 0.5;
             const isMobile = live2dContainer.clientWidth < 600;
-            const zoomScale = baseScale * (isMobile ? 1.5 : 1.65);
+            const isPet = document.body.classList.contains('pet-mode');
+            // 桌宠模式：尽量填满小窗；正常模式保持原有构图
+            const zoomScale = isPet
+                ? baseScale * 1.35
+                : baseScale * (isMobile ? 1.5 : 1.65);
             live2dModel.scale.set(zoomScale);
             
             live2dModel.x = (live2dContainer.clientWidth - (nativeWidth * zoomScale)) / 2;
-            live2dModel.y = 20;
+            live2dModel.y = isPet ? (live2dContainer.clientHeight * 0.02) : 20;
+
+            if (isPet) return; // 桌宠模式用迷你气泡，不走大气泡定位
 
             const positionBubble = (id, targetMobileW, targetDesktopW) => {
                 const bubbleEl = document.getElementById(id);
@@ -1586,11 +1926,195 @@
             positionBubble('approval-bubble', 170, 260);
         }
 
+        // ---------- 桌宠模式（App 内悬浮小人） ----------
+        let petDragBound = false;
+        let petBubbleTimer = null;
+
+        function isPetMode() {
+            return document.body.classList.contains('pet-mode');
+        }
+
+        function ensurePetFab() {
+            const container = document.querySelector('.avatar-container');
+            if (!container) return;
+            let fab = container.querySelector('.pet-mode-fab');
+            if (!fab) {
+                fab = document.createElement('button');
+                fab.type = 'button';
+                fab.className = 'pet-mode-fab';
+                fab.title = '退出桌宠';
+                fab.textContent = '✕';
+                fab.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    togglePetMode(false);
+                });
+                container.appendChild(fab);
+            }
+        }
+
+        function showPetMiniBubble(text) {
+            if (!isPetMode() || !text) return;
+            let el = document.getElementById('pet-mini-bubble');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'pet-mini-bubble';
+                el.className = 'pet-mini-bubble';
+                document.body.appendChild(el);
+            }
+            el.textContent = text;
+            const box = document.querySelector('.avatar-container');
+            if (box) {
+                const r = box.getBoundingClientRect();
+                // 气泡优先放在桌宠左侧
+                const left = Math.max(8, r.left - 158);
+                const top = Math.max(8, r.top + 12);
+                el.style.left = left + 'px';
+                el.style.top = top + 'px';
+            }
+            el.classList.add('show');
+            if (petBubbleTimer) clearTimeout(petBubbleTimer);
+            petBubbleTimer = setTimeout(() => el.classList.remove('show'), 4200);
+        }
+
+        function bindPetDrag() {
+            if (petDragBound) return;
+            const box = document.querySelector('.avatar-container');
+            if (!box) return;
+            petDragBound = true;
+            let dragging = false;
+            let startX = 0, startY = 0, origLeft = 0, origTop = 0;
+            let moved = false;
+
+            const onDown = (e) => {
+                if (!isPetMode()) return;
+                // 点关闭按钮不拖
+                if (e.target && e.target.closest && e.target.closest('.pet-mode-fab')) return;
+                const pt = e.touches ? e.touches[0] : e;
+                dragging = true;
+                moved = false;
+                startX = pt.clientX;
+                startY = pt.clientY;
+                const r = box.getBoundingClientRect();
+                origLeft = r.left;
+                origTop = r.top;
+                box.classList.add('pet-dragging');
+                e.preventDefault();
+            };
+            const onMove = (e) => {
+                if (!dragging || !isPetMode()) return;
+                const pt = e.touches ? e.touches[0] : e;
+                const dx = pt.clientX - startX;
+                const dy = pt.clientY - startY;
+                if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+                let nx = origLeft + dx;
+                let ny = origTop + dy;
+                const maxX = window.innerWidth - box.offsetWidth - 4;
+                const maxY = window.innerHeight - box.offsetHeight - 4;
+                nx = Math.max(4, Math.min(maxX, nx));
+                ny = Math.max(4, Math.min(maxY, ny));
+                box.style.left = nx + 'px';
+                box.style.top = ny + 'px';
+                box.style.right = 'auto';
+                box.style.bottom = 'auto';
+            };
+            const onUp = () => {
+                if (!dragging) return;
+                dragging = false;
+                box.classList.remove('pet-dragging');
+                // 记住位置
+                try {
+                    const r = box.getBoundingClientRect();
+                    localStorage.setItem('micro-agi-pet-pos', JSON.stringify({ left: r.left, top: r.top }));
+                } catch (err) {}
+            };
+
+            box.addEventListener('pointerdown', onDown);
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+            box.addEventListener('touchstart', onDown, { passive: false });
+            window.addEventListener('touchmove', onMove, { passive: false });
+            window.addEventListener('touchend', onUp);
+        }
+
+        function applyPetPosition() {
+            const box = document.querySelector('.avatar-container');
+            if (!box || !isPetMode()) return;
+            try {
+                const raw = localStorage.getItem('micro-agi-pet-pos');
+                if (raw) {
+                    const p = JSON.parse(raw);
+                    if (typeof p.left === 'number' && typeof p.top === 'number') {
+                        box.style.left = p.left + 'px';
+                        box.style.top = p.top + 'px';
+                        box.style.right = 'auto';
+                        box.style.bottom = 'auto';
+                        return;
+                    }
+                }
+            } catch (e) {}
+            // 默认右下角
+            box.style.left = 'auto';
+            box.style.top = 'auto';
+            box.style.right = '10px';
+            box.style.bottom = 'calc(88px + env(safe-area-inset-bottom, 0px))';
+        }
+
+        function togglePetMode(enabled) {
+            const on = !!enabled;
+            document.body.classList.toggle('pet-mode', on);
+            const chk = document.getElementById('settings-pet-checkbox');
+            if (chk) chk.checked = on;
+            try { localStorage.setItem('micro-agi-pet-mode', on ? '1' : '0'); } catch (e) {}
+
+            if (on) {
+                // 桌宠与「折叠对话」互斥：桌宠时要看聊天
+                const chatChk = document.getElementById('settings-chat-checkbox');
+                if (chatChk && chatChk.checked) {
+                    chatChk.checked = false;
+                    toggleChatLogs();
+                }
+                ensurePetFab();
+                bindPetDrag();
+                applyPetPosition();
+                showPetMiniBubble('桌宠模式已开启，拖我可以换位置～');
+            } else {
+                const box = document.querySelector('.avatar-container');
+                if (box) {
+                    box.style.left = '';
+                    box.style.top = '';
+                    box.style.right = '';
+                    box.style.bottom = '';
+                }
+                const mini = document.getElementById('pet-mini-bubble');
+                if (mini) mini.classList.remove('show');
+            }
+            // 等布局生效后再缩放模型
+            requestAnimationFrame(() => {
+                setTimeout(() => adjustModelLayout(), 50);
+            });
+        }
+
+        // 恢复桌宠设置
+        (function restorePetMode() {
+            try {
+                if (localStorage.getItem('micro-agi-pet-mode') === '1') {
+                    // 等 DOM/模型准备好后再开
+                    setTimeout(() => togglePetMode(true), 800);
+                }
+            } catch (e) {}
+        })();
+
         async function initLive2D() {
+            const status = document.getElementById('live2d-status');
+            const showLive2DError = (message) => {
+                if (status) {
+                    status.textContent = message;
+                    status.hidden = false;
+                }
+            };
             if (typeof PIXI === 'undefined' || typeof PIXI.live2d === 'undefined') {
                 console.warn("WebGL libraries (PIXI.js / pixi-live2d-display) failed to load. Running in text-only mode.");
-                const container = document.querySelector('.avatar-container');
-                if (container) container.style.display = 'none';
+                showLive2DError('角色库未加载，请重新打开应用。');
                 return;
             }
             const canvas = document.getElementById('vrm-canvas');
@@ -1599,14 +2123,15 @@
             
             try {
                 window.PIXI = PIXI;
+                const isAndroid = /Android/i.test(navigator.userAgent);
                 
                 live2dApp = new PIXI.Application({
                     view: canvas,
                     transparent: true,
                     autoStart: true,
-                    antialias: true,
+                    antialias: !isAndroid,
                     resizeTo: live2dContainer,
-                    resolution: window.devicePixelRatio || 1
+                    resolution: isAndroid ? 1 : (window.devicePixelRatio || 1)
                 });
                 
                 console.log("Loading Live2D model (Hiyori)...");
@@ -1660,9 +2185,11 @@
                 resizeObserver.observe(live2dContainer);
                 
                 console.log("Live2D model loaded successfully!");
+                if (status) status.hidden = true;
                 
             } catch (err) {
                 console.error("Live2D init error:", err);
+                showLive2DError('角色加载失败：' + (err && err.message ? err.message : 'WebGL 或模型资源不可用'));
             }
         }
 
@@ -1773,7 +2300,9 @@
 
         function speakText(text) {
             stopSpeech();
-            if (!text) return;
+            if (!text || !window.speechSynthesis ||
+                typeof window.speechSynthesis.speak !== 'function' ||
+                typeof SpeechSynthesisUtterance === 'undefined') return;
 
             // Strip code blocks and Markdown formatting to read cleanly
             let cleanText = text
@@ -1810,7 +2339,9 @@
         }
 
         function stopSpeech() {
-            window.speechSynthesis.cancel();
+            if (window.speechSynthesis && typeof window.speechSynthesis.cancel === 'function') {
+                window.speechSynthesis.cancel();
+            }
             isSpeaking = false;
             stopLipSync();
         }
@@ -1929,15 +2460,6 @@
             runInit();
         }
 
-        function escapeHtml(text) {
-            return text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-
         // --- Theme System UI Logic ---
         const themes = {
             cyan: {
@@ -2038,26 +2560,7 @@
         }
 
         // Initialize Theme from localStorage
-        window.addEventListener('DOMContentLoaded', () => {
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then((reg) => {
-                        console.log('Service Worker registered successfully:', reg.scope);
-                        // Force check for updates immediately
-                        reg.update();
-                    })
-                    .catch((err) => console.warn('Service Worker registration failed:', err));
-
-                // Reload the page when the new service worker takes over
-                let refreshing = false;
-                navigator.serviceWorker.addEventListener('controllerchange', () => {
-                    if (!refreshing) {
-                        refreshing = true;
-                        window.location.reload();
-                    }
-                });
-            }
-
+        window.addEventListener('DOMContentLoaded', async () => {
             const savedTheme = localStorage.getItem('micro-agi-theme');
             if (savedTheme && themes[savedTheme]) {
                 setTheme(savedTheme);
@@ -2067,10 +2570,19 @@
             const savedTermTheme = localStorage.getItem('micro-agi-term-theme') || 'dark';
             setTerminalTheme(savedTermTheme);
 
+            // Wait for the native room mode before reading a saved value above
+            // the desktop slider's 100% max. Reading it earlier clamps and
+            // persists 120% as 100% on every reload.
+            await window.microAgiCapabilitiesReady;
             loadAvatarBgSettings();
             loadChatSessions(true); // Pass true to autoSelectLast on load
             checkSystemUpdate(); // Check for hot update on load
             checkTunnelStatus(); // Check network tunnel status
+            
+            updateGoogleLoginStatus(); // Load Google login & custom key settings
+            window.addEventListener('focus', () => {
+                updateGoogleLoginStatus();
+            });
         });
 
         // --- Chat History Management System UI & Logic ---
@@ -2131,16 +2643,25 @@
                         };
                         
                         item.innerHTML = `
-                            <div class="history-item-title" title="${escapeHtml(chat.title)}">${escapeHtml(chat.title)}</div>
+                            <div class="history-item-title"></div>
                             <div class="history-item-actions">
-                                <button class="history-action-btn edit-btn" onclick="renameChatSession('${chat.chat_id}', '${escapeHtml(chat.title)}', event)" title="重命名">
+                                <button class="history-action-btn edit-btn" title="重命名">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
                                 </button>
-                                <button class="history-action-btn delete-btn" onclick="deleteChatSession('${chat.chat_id}', event)" title="删除对话">
+                                <button class="history-action-btn delete-btn" title="删除对话">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                                 </button>
                             </div>
                         `;
+                        const title = item.querySelector('.history-item-title');
+                        title.textContent = chat.title || '';
+                        title.title = chat.title || '';
+                        item.querySelector('.edit-btn').addEventListener('click', (event) => {
+                            renameChatSession(chat.chat_id, chat.title, event);
+                        });
+                        item.querySelector('.delete-btn').addEventListener('click', (event) => {
+                            deleteChatSession(chat.chat_id, event);
+                        });
                         
                         listContainer.appendChild(item);
                     });
@@ -2184,7 +2705,8 @@
             // Update title in header
             const headerTitle = document.getElementById('header-chat-title');
             if (headerTitle) {
-                const activeItem = document.querySelector(`.history-item[data-id="${chatId}"]`);
+                const activeItem = Array.from(document.querySelectorAll('.history-item'))
+                    .find(item => item.getAttribute('data-id') === chatId);
                 if (activeItem) {
                     const titleEl = activeItem.querySelector('.history-item-title');
                     if (titleEl) {
@@ -2200,7 +2722,7 @@
             chatHistory = [];
             
             try {
-                const response = await fetch(`/api/chats/${chatId}/messages`);
+                const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}/messages`);
                 const messages = await response.json();
                 
                 // Clear loading
@@ -2212,7 +2734,7 @@
                 } else {
                     messages.forEach(msg => {
                         if (msg.role === 'user') {
-                            appendMessage('user', '您', msg.content);
+                            appendMessage('user', '您', escapeHtml(msg.content).replace(/\n/g, '<br>'));
                         } else {
                             appendAssistantMessage(msg.content, [], null);
                         }
@@ -2227,7 +2749,7 @@
             } catch (err) {
                 const loadingEl = document.getElementById(loadingId);
                 if (loadingEl) loadingEl.remove();
-                appendMessage("assistant", "系统错误", `加载历史消息失败: ${err.message}`);
+                appendMessage("assistant", "系统错误", `加载历史消息失败: ${escapeHtml(err.message)}`);
             }
             
             chatArea.scrollTop = chatArea.scrollHeight;
@@ -2251,7 +2773,7 @@
             
             // Clear input box
             chatInput.value = "";
-            chatInput.placeholder = "输入一条控制指令 (例如: 列出当前文件)...";
+            chatInput.placeholder = defaultChatPlaceholder();
             
             // Add a floating welcome message
             const welcomeDiv = document.createElement("div");
@@ -2275,7 +2797,7 @@
             if (!confirm("确定要删除这段对话历史记录吗？此操作无法撤销。")) return;
             
             try {
-                const response = await fetch(`/api/chats/${chatId}`, {
+                const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
                     method: "DELETE"
                 });
                 const data = await response.json();
@@ -2355,56 +2877,63 @@
                 loadArtifacts();
             } else if (idx === 1) {
                 loadExtensions();
-                refreshHardwareBattery();
-                pullHardwareClipboard();
             }
         }
 
         function switchSettingsTab(idx) {
             const tabs = document.querySelectorAll('.settings-tab');
             const panes = document.querySelectorAll('.settings-pane');
+            let n = Number(idx);
+            if (window.microAgiEmbedded && ![1, 2, 3].includes(n)) n = 3;
             tabs.forEach((tab, i) => {
-                if (i === idx) {
-                    tab.classList.add('active');
-                } else {
-                    tab.classList.remove('active');
-                }
+                const on = i === n;
+                tab.classList.toggle('active', on);
+                tab.setAttribute('aria-selected', on ? 'true' : 'false');
             });
-            panes.forEach((pane, i) => {
-                if (i === idx) {
-                    pane.classList.add('active');
-                    pane.style.display = 'flex';
-                } else {
-                    pane.classList.remove('active');
-                    pane.style.display = 'none';
-                }
+            panes.forEach((pane) => {
+                const paneIdx = pane.hasAttribute('data-settings-pane')
+                    ? Number(pane.getAttribute('data-settings-pane'))
+                    : Array.prototype.indexOf.call(panes, pane);
+                const on = paneIdx === n;
+                pane.classList.toggle('active', on);
+                pane.style.display = on ? 'flex' : 'none';
             });
+            try { localStorage.setItem('micro-agi-settings-tab', String(n)); } catch (e) {}
+            // Keep active pill visible in horizontal nav
+            const active = document.querySelector('.settings-nav-item.active, .settings-tab.active');
+            if (active && typeof active.scrollIntoView === 'function') {
+                try { active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); } catch (e) {}
+            }
+            if (n === 0 && typeof aiosLoadStatus === 'function') {
+                setTimeout(aiosLoadStatus, 80);
+            }
+        }
+
+        function closeWorkspaceConsole() {
+            const overlay = document.getElementById('workspaceConsoleOverlay');
+            const drawer = document.getElementById('workspaceConsoleDrawer');
+            if (overlay) overlay.classList.remove('active');
+            if (drawer) drawer.classList.remove('active');
+            document.body.style.overflow = '';
         }
 
         function toggleWorkspaceConsole() {
             const overlay = document.getElementById('workspaceConsoleOverlay');
             const drawer = document.getElementById('workspaceConsoleDrawer');
             if (!overlay || !drawer) return;
-            
-            const isMoreMenuOpen = document.getElementById('more-menu-drawer').classList.contains('open');
-            if (isMoreMenuOpen) closeMoreMenu();
-            
+
+            const moreMenu = document.getElementById('more-menu-drawer');
+            if (moreMenu && moreMenu.classList.contains('open')) {
+                try { closeMoreMenu(); } catch (e) {}
+            }
+
             if (drawer.classList.contains('active')) {
-                overlay.classList.remove('active');
-                drawer.classList.remove('active');
+                closeWorkspaceConsole();
             } else {
                 overlay.classList.add('active');
                 drawer.classList.add('active');
-                
-                // Auto load or select active tab
-                const activeTab = document.querySelector('.console-tab.active');
-                if (activeTab) {
-                    const tabs = Array.from(document.querySelectorAll('.console-tab'));
-                    const idx = tabs.indexOf(activeTab);
-                    if (idx === 0) loadArtifacts();
-                } else {
-                    switchConsoleTab(0);
-                }
+                document.body.style.overflow = 'hidden';
+                loadArtifacts(window._artifactTypeFilter || 'all');
             }
         }
 
@@ -2449,11 +2978,19 @@
 
             // Remove custom bg from storage and element
             localStorage.removeItem('micro-agi-custom-bg');
-            bgEl.style.backgroundImage = 'none';
+            if (presetName === 'default' && document.documentElement.classList.contains('embedded-host')) {
+                bgEl.style.removeProperty('background-image');
+            } else {
+                bgEl.style.backgroundImage = 'none';
+            }
 
             // Apply preset gradients to the container
             if (presetName === 'default') {
-                container.style.background = 'radial-gradient(circle at center, rgba(6, 182, 212, 0.2) 0%, rgba(139, 92, 246, 0.05) 60%, rgba(11, 15, 25, 0.95) 100%)';
+                if (document.documentElement.classList.contains('embedded-host')) {
+                    container.style.removeProperty('background');
+                } else {
+                    container.style.background = 'radial-gradient(circle at center, rgba(6, 182, 212, 0.2) 0%, rgba(139, 92, 246, 0.05) 60%, rgba(11, 15, 25, 0.95) 100%)';
+                }
             } else if (presetName === 'nebula') {
                 container.style.background = 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%)';
             } else if (presetName === 'cyberpunk') {
@@ -2495,6 +3032,31 @@
                 applyCustomBg(customBg);
             }
 
+            const embeddedRoom = !customBg && document.documentElement.classList.contains('embedded-host');
+            if (embeddedRoom) {
+                // The room illustration needs a wider adjustment range than the
+                // older gradient presets. Keep the slider truthful to the image.
+                document.getElementById('bg-brightness-slider').max = '150';
+            }
+
+            // The standalone room is a complete illustration, not the old
+            // holographic gradient. Migrate the old 50%/60% defaults once so
+            // its first appearance is not unintentionally dimmed.
+            if (embeddedRoom
+                    && localStorage.getItem('micro-agi-room-bg-v1') !== '1') {
+                const oldRaw = localStorage.getItem('micro-agi-bg-settings');
+                let oldSettings = null;
+                try { oldSettings = oldRaw ? JSON.parse(oldRaw) : null; } catch (_) {}
+                if (!oldSettings || (Number(oldSettings.brightness) === 50
+                        && Number(oldSettings.blur) === 0
+                        && Number(oldSettings.opacity) === 60)) {
+                    document.getElementById('bg-brightness-slider').value = '100';
+                    document.getElementById('bg-opacity-slider').value = '100';
+                    localStorage.removeItem('micro-agi-bg-settings');
+                }
+                localStorage.setItem('micro-agi-room-bg-v1', '1');
+            }
+
             // 2. Load sliders configuration
             const savedSettings = localStorage.getItem('micro-agi-bg-settings');
             if (savedSettings) {
@@ -2511,6 +3073,24 @@
                 } catch(e) {
                     console.error("Failed to parse bg settings:", e);
                 }
+            }
+
+            // Previous Android builds could leave the room at a dark legacy
+            // brightness/opacity even after the original migration. Bring the
+            // bundled scene to the new readable default once; never modify a
+            // user-uploaded image, and keep subsequent manual adjustments.
+            if (embeddedRoom && localStorage.getItem('micro-agi-room-bg-v2') !== '1') {
+                const brightSlider = document.getElementById('bg-brightness-slider');
+                const opacitySlider = document.getElementById('bg-opacity-slider');
+                // Only migrate an untouched default or the exact legacy 50/60
+                // preset. Lower values may be an intentional user adjustment.
+                const legacyPreset = Number(brightSlider.value) === 50
+                    && Number(opacitySlider.value) === 60;
+                if (!savedSettings || legacyPreset) {
+                    brightSlider.value = '120';
+                    opacitySlider.value = '100';
+                }
+                localStorage.setItem('micro-agi-room-bg-v2', '1');
             }
             
             // Apply current slider values
@@ -2587,18 +3167,20 @@
 
         // Wrapper functions for legacy drawers redirects
         function toggleWardrobe() {
+            // 形象 tab index after settings IA redesign
+            const WARDROBE_TAB = 1;
             const menuEl = document.getElementById("more-menu-drawer");
             if (menuEl.classList.contains("open")) {
                 const activeTab = document.querySelector('.settings-tab.active');
                 const tabs = document.querySelectorAll('.settings-tab');
-                if (activeTab === tabs[0]) {
+                if (activeTab === tabs[WARDROBE_TAB]) {
                     closeMoreMenu();
                 } else {
-                    switchSettingsTab(0);
+                    switchSettingsTab(WARDROBE_TAB);
                 }
             } else {
                 openMoreMenu();
-                switchSettingsTab(0);
+                switchSettingsTab(WARDROBE_TAB);
             }
         }
 
@@ -2626,8 +3208,6 @@
                 drawer.classList.add('active');
                 
                 loadExtensions();
-                refreshHardwareBattery();
-                pullHardwareClipboard();
             }
         }
 
@@ -2662,64 +3242,184 @@
         }
 
         let currentArtifactsData = [];
+        let filteredArtifactsData = [];
         let activeArtifact = null;
+        window._artifactTypeFilter = 'all';
+
+        function formatArtifactTime(iso) {
+            if (!iso) return '';
+            try {
+                // sqlite CURRENT_TIMESTAMP is UTC-ish 'YYYY-MM-DD HH:MM:SS'
+                const s = String(iso).replace(' ', 'T');
+                const d = new Date(s.includes('T') ? (s.endsWith('Z') ? s : s + 'Z') : s);
+                if (isNaN(d.getTime())) return String(iso).slice(0, 16);
+                const diff = (Date.now() - d.getTime()) / 1000;
+                if (diff < 60) return '刚刚';
+                if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+                if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+                if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
+                return d.toLocaleDateString();
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function formatArtifactSize(n) {
+            n = Number(n) || 0;
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            return (n / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function langBadge(art) {
+            const lang = (art.lang || art.key_prompt || '').trim();
+            if (lang) return lang.toUpperCase().slice(0, 8);
+            if (art.type === 'image') return 'IMG';
+            const t = (art.title || '').toLowerCase();
+            const keys = ['python','js','ts','html','css','json','bash','sql','go','rust','java'];
+            for (const k of keys) if (t.includes(k)) return k.toUpperCase();
+            return art.type === 'code' ? 'CODE' : 'FILE';
+        }
 
         async function loadArtifacts(typeFilter = 'all') {
+            window._artifactTypeFilter = typeFilter || 'all';
+            const grid = document.getElementById('artifactsGrid');
+            if (grid) {
+                grid.innerHTML = `<div class="aa-empty"><h3>加载中…</h3></div>`;
+            }
+            document.querySelectorAll('.aa-chip').forEach(tab => {
+                tab.classList.toggle('active', tab.getAttribute('data-type') === window._artifactTypeFilter);
+            });
             try {
-                // For MVP, we query without strict project_id, let backend fallback to default if needed.
-                // In future: `?project_id=${currentProjectId}&type_filter=${typeFilter}`
-                const response = await fetch(`/api/artifacts?type_filter=${typeFilter}`);
+                const response = await fetch(`/api/artifacts?project_id=all&type_filter=${encodeURIComponent(window._artifactTypeFilter)}`);
                 const artifacts = await response.json();
-                currentArtifactsData = artifacts || [];
-                renderArtifacts(currentArtifactsData);
-                
-                // Update active tab UI
-                document.querySelectorAll('.artifacts-tab').forEach(tab => tab.classList.remove('active'));
-                const targetTab = document.querySelector(`.artifacts-tab[data-type="${typeFilter}"]`);
-                if(targetTab) targetTab.classList.add('active');
-                
+                currentArtifactsData = Array.isArray(artifacts) ? artifacts : [];
+                filterArtifactsLocal();
             } catch (err) {
                 console.error("Failed to load artifacts:", err);
+                if (grid) {
+                    grid.innerHTML = `<div class="aa-empty"><h3>加载失败</h3><p>${escapeHtml(err.message || '网络异常')}</p></div>`;
+                }
             }
+        }
+
+        function filterArtifactsLocal() {
+            const q = ((document.getElementById('artifactsSearch') || {}).value || '').trim().toLowerCase();
+            let list = currentArtifactsData.slice();
+            if (q) {
+                list = list.filter(a => {
+                    const hay = [a.title, a.preview_text, a.lang, a.key_prompt, a.type, a.content_url]
+                        .map(x => String(x || '').toLowerCase()).join(' ');
+                    return hay.includes(q);
+                });
+            }
+            filteredArtifactsData = list;
+            renderArtifacts(list);
         }
 
         function renderArtifacts(artifacts) {
             const grid = document.getElementById('artifactsGrid');
-            grid.innerHTML = '';
-            
+            if (!grid) return;
+            const badge = document.getElementById('artifactsCountBadge');
+            if (badge) badge.textContent = String((artifacts || []).length);
+
             if (!artifacts || artifacts.length === 0) {
-                grid.innerHTML = `<div style="color: var(--text-muted); font-size: 0.8rem; grid-column: 1/-1; text-align: center; padding: 40px;">暂无成果。与 AI 对话让它生成 code 或图片吧！</div>`;
+                const hasAny = (currentArtifactsData || []).length > 0;
+                grid.innerHTML = hasAny
+                    ? `<div class="aa-empty"><h3>没有匹配结果</h3><p>换个关键词，或切换上方分类。</p></div>`
+                    : `<div class="aa-empty"><h3>资产箱是空的</h3><p>让 AI 输出代码块（\`\`\`python）或图片链接，会自动归档到这里。</p></div>`;
                 return;
             }
 
+            grid.innerHTML = '';
             artifacts.forEach(art => {
-                const card = document.createElement('div');
-                card.className = `artifact-card ${art.type}`;
-                card.setAttribute('onclick', `openArtifactModal('${art.artifact_id}')`);
-                
-                let iconHtml = `&lt;/&gt;`;
-                if (art.type === 'image') {
-                    iconHtml = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>`;
-                }
-                
-                card.innerHTML = `
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <div class="artifact-icon">${iconHtml}</div>
-                        <div class="artifact-title" title="${art.title}">${art.title}</div>
+                const id = art.artifact_id;
+                const lang = langBadge(art);
+                const typeLabel = art.type === 'image' ? '图片' : '代码';
+                const typeClass = art.type === 'image' ? 'image' : 'code';
+                const metaTime = formatArtifactTime(art.created_at);
+                const sizeLabel = art.type === 'code'
+                    ? `${art.lines || (String(art.content_url || '').split('\n').length)} 行`
+                    : formatArtifactSize(art.size || (art.content_url || '').length);
+
+                const row = document.createElement('div');
+                row.className = 'aa-item';
+                row.onclick = () => openArtifactModal(id);
+                row.innerHTML = `
+                    <div class="aa-item-top">
+                        <div class="aa-item-title">${escapeHtml(art.title || '未命名资产')}</div>
+                        <span class="aa-item-type ${typeClass}">${typeLabel}</span>
                     </div>
-                    <div class="artifact-preview">${escapeHtml(art.preview_text)}</div>
-                    <div class="artifact-action" style="display: flex; gap: 8px;">
-                        <button class="icon-btn" onclick="deleteArtifact(event, '${art.artifact_id}')" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-radius: 6px; padding: 4px; width: 26px; height: 26px; border: 1px solid rgba(239, 68, 68, 0.3); display: flex; align-items: center; justify-content: center; transition: all 0.2s;" title="删除资产">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                        </button>
-                        <button class="btn-time-machine" onclick="timeMachineTo(event, '${art.node_id}')">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            时光机
-                        </button>
+                    <div class="aa-item-meta">
+                        <span class="aa-tag">${escapeHtml(lang)}</span>
+                        <span class="aa-tag">${escapeHtml(sizeLabel)}</span>
+                        ${metaTime ? `<span class="aa-tag">${escapeHtml(metaTime)}</span>` : ''}
+                    </div>
+                    <div class="aa-item-preview">${escapeHtml(art.preview_text || (art.type === 'image' ? art.content_url : '') || '无预览')}</div>
+                    <div class="aa-item-actions">
+                        <button type="button" class="aa-act primary" data-act="copy">复制</button>
+                        <button type="button" class="aa-act" data-act="insert">插入</button>
+                        <button type="button" class="aa-act" data-act="ask">继续问</button>
+                        <button type="button" class="aa-act danger" data-act="del">删除</button>
                     </div>
                 `;
-                grid.appendChild(card);
+                row.querySelectorAll('[data-act]').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const act = btn.getAttribute('data-act');
+                        if (act === 'copy') quickCopyArtifact(id);
+                        else if (act === 'insert') insertArtifactToInput(id);
+                        else if (act === 'ask') askAboutArtifact(id);
+                        else if (act === 'del') deleteArtifact(e, id);
+                    });
+                });
+                grid.appendChild(row);
             });
+        }
+
+        function getArtifactById(id) {
+            return (currentArtifactsData || []).find(a => a.artifact_id === id);
+        }
+
+        function quickCopyArtifact(id) {
+            const art = getArtifactById(id);
+            if (!art) return;
+            const text = art.type === 'image' ? art.content_url : art.content_url;
+            copyTextToClipboard(text, art.type === 'image' ? '图片链接已复制' : '代码已复制');
+        }
+
+        function insertArtifactToInput(id) {
+            const art = getArtifactById(id);
+            if (!art) return;
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            let snippet = '';
+            if (art.type === 'image') {
+                snippet = art.content_url || '';
+            } else {
+                const lang = art.lang || art.key_prompt || '';
+                snippet = '```' + lang + '\n' + (art.content_url || '') + '\n```';
+            }
+            input.value = (input.value ? input.value + '\n\n' : '') + snippet;
+            input.focus();
+            closeWorkspaceConsole();
+            showToast('已插入到输入框');
+        }
+
+        function askAboutArtifact(id) {
+            const art = getArtifactById(id);
+            if (!art) return;
+            const input = document.getElementById('chatInput');
+            if (!input) return;
+            if (art.type === 'image') {
+                input.value = `请基于这张图继续说明/改进：${art.content_url}`;
+            } else {
+                const lang = art.lang || art.key_prompt || 'code';
+                input.value = `请基于下面这段 ${lang} 代码继续优化/解释：\n\n\`\`\`${lang}\n${art.content_url}\n\`\`\``;
+            }
+            input.focus();
+            closeWorkspaceConsole();
+            showToast('已填入提问，可直接发送');
         }
 
         async function deleteArtifact(e, artifactId) {
@@ -2729,8 +3429,7 @@
             try {
                 const res = await fetch(`/api/artifacts/${artifactId}`, { method: 'DELETE' });
                 if (res.ok) {
-                    const activeTab = document.querySelector('.artifacts-tab.active');
-                    loadArtifacts(activeTab ? activeTab.dataset.type : 'all');
+                    loadArtifacts(window._artifactTypeFilter || 'all');
                     if (activeArtifact && activeArtifact.artifact_id === artifactId) {
                         closeArtifactModal();
                     }
@@ -2746,21 +3445,20 @@
 
         function timeMachineTo(e, nodeId) {
             if (e) e.stopPropagation();
-            toggleArtifacts(); // Close drawer
+            closeWorkspaceConsole();
             
             // Wait for drawer to close before scrolling
             setTimeout(() => {
                 const targetMsg = document.getElementById(`msg-${nodeId}`);
                 if (targetMsg) {
-                    // Smooth scroll
                     targetMsg.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // Highlight animation
                     targetMsg.classList.add('highlight-msg');
                     setTimeout(() => targetMsg.classList.remove('highlight-msg'), 3000);
+                    showToast('已定位到对话中的原消息');
                 } else {
-                    alert("该消息已在当前历史流中被清除或折叠。");
+                    showToast('当前会话里找不到原消息（可能已换对话或不在屏幕缓存中）');
                 }
-            }, 300);
+            }, 320);
         }
 
         function openArtifactModal(artifactId) {
@@ -2776,12 +3474,21 @@
             
             // Render body content depending on type
             if (activeArtifact.type === 'image') {
-                bodyEl.innerHTML = `
-                    <img class="artifact-image-preview" src="${activeArtifact.content_url}" alt="${activeArtifact.title || 'Preview'}" onerror="this.src='wechat_qr.png'; this.title='无法加载图片';">
-                    <div style="font-size: 0.75rem; color: var(--text-muted); text-align: center; margin-top: 8px; word-break: break-all;">
-                        图片链接: ${activeArtifact.content_url}
-                    </div>
-                `;
+                bodyEl.textContent = '';
+                const image = document.createElement('img');
+                image.className = 'artifact-image-preview';
+                image.alt = activeArtifact.title || 'Preview';
+                image.referrerPolicy = 'no-referrer';
+                image.src = activeArtifact.content_url || '';
+                const caption = document.createElement('div');
+                caption.style.cssText = 'font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:8px;word-break:break-all;';
+                caption.textContent = '图片链接: ' + (activeArtifact.content_url || '');
+                image.addEventListener('error', () => {
+                    image.style.display = 'none';
+                    caption.textContent = '无法加载图片 · ' + caption.textContent;
+                }, { once: true });
+                bodyEl.appendChild(image);
+                bodyEl.appendChild(caption);
                 document.getElementById('artifactModalCopy').innerHTML = `
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     复制链接
@@ -2798,13 +3505,13 @@
             
             // Set up footer actions
             const tmBtn = document.getElementById('artifactModalTimeMachine');
-            tmBtn.onclick = (e) => {
+            if (tmBtn) tmBtn.onclick = (e) => {
                 closeArtifactModal();
                 timeMachineTo(e, activeArtifact.node_id);
             };
 
             const copyBtn = document.getElementById('artifactModalCopy');
-            copyBtn.onclick = () => {
+            if (copyBtn) copyBtn.onclick = () => {
                 if (activeArtifact.type === 'image') {
                     copyTextToClipboard(activeArtifact.content_url, "图片链接已复制！");
                 } else {
@@ -2812,8 +3519,19 @@
                 }
             };
 
+            const insertBtn = document.getElementById('artifactModalInsert');
+            if (insertBtn) insertBtn.onclick = () => {
+                closeArtifactModal();
+                insertArtifactToInput(activeArtifact.artifact_id);
+            };
+            const askBtn = document.getElementById('artifactModalAsk');
+            if (askBtn) askBtn.onclick = () => {
+                closeArtifactModal();
+                askAboutArtifact(activeArtifact.artifact_id);
+            };
+
             const downloadBtn = document.getElementById('artifactModalDownload');
-            downloadBtn.onclick = () => {
+            if (downloadBtn) downloadBtn.onclick = () => {
                 downloadArtifactFile(activeArtifact);
             };
 
@@ -2899,6 +3617,7 @@
         let currentPreviewHtml = "";
         
         window.openLivePreview = function(htmlContent) {
+            if (window.microAgiEmbedded !== false) return;
             currentPreviewHtml = htmlContent;
             const previewPanel = document.getElementById('previewPanel');
             const iframe = document.getElementById('previewIframe');
@@ -2947,6 +3666,18 @@
         };
 
         async function checkSystemUpdate() {
+            // Capability detection is asynchronous. Never probe the disabled
+            // updater before the embedded Android mode is known.
+            if (window.microAgiCapabilitiesReady) {
+                await window.microAgiCapabilitiesReady;
+            }
+            if (window.microAgiEmbedded !== false) {
+                const version = document.getElementById('system-update-ver');
+                if (version && window.microAgiEmbedded) {
+                    version.textContent = '独立版请通过安装包更新';
+                }
+                return;
+            }
             const verText = document.getElementById('system-update-ver');
             const updateBtn = document.getElementById('system-update-btn');
             if (!verText) return;
@@ -2956,7 +3687,7 @@
                 if (!res.ok) throw new Error("HTTP error " + res.status);
                 const data = await res.json();
                 if (data.update_available) {
-                    verText.innerHTML = `有新版本可用: ${data.local_commit} &rarr; <span style="color: var(--primary); font-weight: bold;">${data.remote_commit}</span>`;
+                    verText.textContent = `有新版本可用: ${data.local_commit || '未知'} → ${data.remote_commit || '未知'}`;
                     if (updateBtn) updateBtn.style.display = 'block';
                 } else {
                     verText.textContent = `已是最新版本 (当前: ${data.local_commit || '未知'})`;
@@ -2970,6 +3701,7 @@
         }
 
         async function triggerSystemUpdate() {
+            if (window.microAgiEmbedded !== false) return;
             const verText = document.getElementById('system-update-ver');
             const updateBtn = document.getElementById('system-update-btn');
             
@@ -3015,6 +3747,349 @@
         window.checkSystemUpdate = checkSystemUpdate;
         window.triggerSystemUpdate = triggerSystemUpdate;
         window.sendSuggestion = sendSuggestion;
+        window.togglePetMode = togglePetMode;
+
+        // ========== AI OS: entry / memory / digest ==========
+        let _aiosMemoriesCache = [];
+
+        function aiosFmtTime(ts) {
+            if (!ts) return '';
+            try {
+                const d = new Date(String(ts).replace(' ', 'T'));
+                if (isNaN(d.getTime())) return String(ts).slice(0, 16);
+                const m = d.getMonth() + 1;
+                const day = d.getDate();
+                const hh = String(d.getHours()).padStart(2, '0');
+                const mm = String(d.getMinutes()).padStart(2, '0');
+                return `${m}/${day} ${hh}:${mm}`;
+            } catch (e) {
+                return String(ts).slice(0, 16);
+            }
+        }
+
+        function aiosSetNotifBadge(notif) {
+            const el = document.getElementById('aios-notif-badge');
+            if (!el) return;
+            notif = notif || {};
+            el.className = 'aios-badge';
+            if (notif.available === false) {
+                el.classList.add('aios-badge--err');
+                el.textContent = '通知：不可用（需 Termux:API）';
+                el.title = notif.tip || '';
+            } else if (notif.available === true) {
+                el.classList.add('aios-badge--ok');
+                el.textContent = '通知：Termux:API 可用';
+                el.title = notif.tip || '';
+            } else {
+                el.classList.add('aios-badge--muted');
+                el.textContent = '通知：检测中…';
+            }
+        }
+
+        function aiosShowDigestPreview(text, meta) {
+            const pre = document.getElementById('aios-digest-preview');
+            if (!pre) return;
+            if (!text) {
+                pre.hidden = true;
+                pre.textContent = '';
+                return;
+            }
+            let head = '';
+            if (meta) {
+                const bits = [];
+                if (meta.kind) bits.push('类型 ' + meta.kind);
+                if (meta.preview_only) bits.push('仅预览');
+                if (meta.skipped) bits.push('今日已发过（展示内容）');
+                if (meta.notification === true) bits.push('通知已推送');
+                if (meta.notification === false && !meta.preview_only) bits.push('通知未推送');
+                if (meta.notif_reason) bits.push(meta.notif_reason);
+                if (bits.length) head = '【' + bits.join(' · ') + '】\n';
+            }
+            pre.textContent = head + text;
+            pre.hidden = false;
+        }
+
+        async function aiosLoadStatus() {
+            const line = document.getElementById('aios-status-line');
+            try {
+                const res = await fetch('/api/aios/status');
+                const data = await res.json();
+                if (!data.ok) throw new Error(data.error || 'status fail');
+                const s = data.snapshot || {};
+                const bat = (s.battery && s.battery.percentage != null) ? s.battery.percentage + '%' : '?';
+                const free = s.disk_home_free_gb != null ? s.disk_home_free_gb + 'G' : '?';
+                const svc = s.services || {};
+                const svcOk = Object.values(svc).filter(Boolean).length;
+                if (line) {
+                    line.textContent = `电量 ${bat} · 盘剩 ${free} · 服务 ${svcOk}/${Object.keys(svc).length} · 记忆 ${s.memories || 0} · 资产24h ${s.artifacts_24h || 0} · ${s.time || ''}`;
+                }
+                aiosSetNotifBadge(data.notification || s.notification);
+                _aiosMemoriesCache = data.memories || [];
+                const qEl = document.getElementById('aios-memory-search');
+                const q = qEl ? qEl.value : '';
+                aiosRenderMemories(_aiosMemoriesCache, q);
+            } catch (e) {
+                if (line) line.textContent = '状态获取失败: ' + (e.message || e);
+                aiosSetNotifBadge({ available: false, tip: String(e.message || e) });
+            }
+        }
+
+        function aiosFilterMemories(q) {
+            aiosRenderMemories(_aiosMemoriesCache, q);
+        }
+
+        function aiosRenderMemories(items, filterQ) {
+            const box = document.getElementById('aios-memory-list');
+            if (!box) return;
+            let list = items || [];
+            const q = (filterQ || '').trim().toLowerCase();
+            if (q) {
+                list = list.filter(m => ((m.content || '') + ' ' + (m.kind || '')).toLowerCase().includes(q));
+            }
+            box.replaceChildren();
+            if (!list.length) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'color:var(--text-muted);padding:6px 0;';
+                empty.textContent = q
+                    ? '没有匹配的记忆'
+                    : '暂无记忆。可添加，或聊天说「记住：…」';
+                box.appendChild(empty);
+                return;
+            }
+            list.forEach(m => {
+                const id = String(m.memory_id || '');
+                const imp = Number(m.importance || 1);
+                const pinned = imp >= 5;
+                const t = aiosFmtTime(m.updated_at || m.created_at);
+                const item = document.createElement('div');
+                item.className = `aios-mem-item${pinned ? ' is-pinned' : ''}`;
+                item.dataset.mid = id;
+
+                const body = document.createElement('div');
+                body.className = 'aios-mem-body';
+                const meta = document.createElement('div');
+                meta.className = 'aios-mem-meta';
+                const kind = document.createElement('span');
+                kind.className = 'aios-mem-kind';
+                kind.textContent = `${pinned ? '📌 ' : ''}[${m.kind || 'fact'}]`;
+                meta.appendChild(kind);
+                if (m.source) {
+                    const source = document.createElement('span');
+                    source.textContent = m.source;
+                    meta.appendChild(source);
+                }
+                if (t) {
+                    const time = document.createElement('span');
+                    time.textContent = t;
+                    meta.appendChild(time);
+                }
+                const content = document.createElement('div');
+                content.textContent = m.content || '';
+                body.append(meta, content);
+
+                const actions = document.createElement('div');
+                actions.className = 'aios-mem-actions';
+                const pin = document.createElement('button');
+                pin.type = 'button';
+                if (pinned) pin.className = 'pin-on';
+                pin.textContent = pinned ? '取消置顶' : '置顶';
+                pin.addEventListener('click', () => aiosPinMemory(id, !pinned));
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.className = 'danger';
+                remove.textContent = '删除';
+                remove.addEventListener('click', () => aiosDeleteMemory(id));
+                actions.append(pin, remove);
+                item.append(body, actions);
+                box.appendChild(item);
+            });
+        }
+
+        async function aiosRefreshEntry() {
+            const btn = document.getElementById('aios-refresh-btn');
+            if (btn) { btn.disabled = true; btn.textContent = '刷新中…'; }
+            try {
+                const res = await fetch('/api/aios/entry/refresh', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: '{}'
+                });
+                const data = await res.json();
+                const detail = data.notification_detail || {};
+                const msg = data.message || detail.reason || (data.notification ? '通知栏入口已刷新' : '状态已刷新，通知可能失败');
+                if (typeof showToast === 'function') showToast(msg);
+                else alert(msg);
+                if (detail.available === false || data.notification === false) {
+                    aiosSetNotifBadge(detail.available === false
+                        ? { available: false, tip: detail.reason }
+                        : { available: true, tip: detail.reason });
+                } else if (data.notification) {
+                    aiosSetNotifBadge({ available: true, tip: detail.reason || 'OK' });
+                }
+                aiosLoadStatus();
+            } catch (e) {
+                if (typeof showToast === 'function') showToast('刷新失败: ' + e.message);
+                else alert('刷新失败: ' + e.message);
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = '刷新入口'; }
+            }
+        }
+
+        /**
+         * @param {string} kind
+         * @param {boolean} push  false = preview only
+         */
+        async function aiosSendDigest(kind, push) {
+            if (push === undefined) push = true;
+            try {
+                const res = await fetch('/api/aios/digest', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        kind: kind || 'now',
+                        push: !!push,
+                        force: true  // manual always force
+                    })
+                });
+                const data = await res.json();
+                const detail = data.notification_detail || {};
+                const meta = {
+                    kind: data.kind,
+                    skipped: data.skipped,
+                    notification: data.notification,
+                    preview_only: !push || data.preview_only,
+                    notif_reason: detail.reason
+                };
+                if (data.content) aiosShowDigestPreview(data.content, meta);
+
+                let toast = '';
+                if (data.skipped && push) {
+                    toast = '今日该简报已发过，已展示内容';
+                } else if (!push) {
+                    toast = '已生成预览（未推送通知）';
+                } else if (data.ok && data.notification) {
+                    toast = '简报已推送到通知栏';
+                } else if (data.ok) {
+                    toast = '简报已生成 · ' + (detail.reason || '通知未成功');
+                } else {
+                    toast = data.error || '推送失败';
+                }
+                if (typeof showToast === 'function') showToast(toast);
+                else if (!data.content) alert(toast);
+                aiosLoadStatus();
+            } catch (e) {
+                if (typeof showToast === 'function') showToast('简报失败: ' + e.message);
+                else alert('简报失败: ' + e.message);
+            }
+        }
+
+        async function aiosAddMemory() {
+            const input = document.getElementById('aios-memory-input');
+            let text = (input && input.value || '').trim();
+            if (!text) return;
+            text = text.replace(/^(记住|请记住|记一下|帮我记住|记着|别忘了)[:：]?\s*/i, '');
+            text = text.replace(/^remember(?:\s+that)?[:：]?\s*/i, '');
+            if (!text) return;
+            try {
+                const res = await fetch('/api/aios/memories', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ content: text, kind: 'fact', importance: 2 })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    if (input) input.value = '';
+                    if (typeof showToast === 'function') showToast('已写入长期记忆');
+                    aiosLoadStatus();
+                } else {
+                    if (typeof showToast === 'function') showToast(data.error || '添加失败');
+                    else alert(data.error || '添加失败');
+                }
+            } catch (e) {
+                if (typeof showToast === 'function') showToast('添加失败: ' + e.message);
+                else alert('添加失败: ' + e.message);
+            }
+        }
+
+        async function aiosDeleteMemory(id) {
+            if (!id || !confirm('删除这条记忆？')) return;
+            try {
+                const res = await fetch('/api/aios/memories/' + encodeURIComponent(id), { method: 'DELETE' });
+                const data = await res.json();
+                if (data.ok || data.status === 'success') {
+                    if (typeof showToast === 'function') showToast('已删除');
+                    aiosLoadStatus();
+                } else {
+                    alert(data.error || '删除失败');
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+
+        async function aiosPinMemory(id, pinned) {
+            if (!id) return;
+            try {
+                const res = await fetch('/api/aios/memories/pin', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ memory_id: id, pinned: !!pinned })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    if (typeof showToast === 'function') showToast(pinned ? '已置顶' : '已取消置顶');
+                    aiosLoadStatus();
+                } else {
+                    alert(data.error || '操作失败');
+                }
+            } catch (e) {
+                alert('操作失败: ' + e.message);
+            }
+        }
+
+        window.aiosLoadStatus = aiosLoadStatus;
+        window.aiosRefreshEntry = aiosRefreshEntry;
+        window.aiosSendDigest = aiosSendDigest;
+        window.aiosAddMemory = aiosAddMemory;
+        window.aiosDeleteMemory = aiosDeleteMemory;
+        window.aiosPinMemory = aiosPinMemory;
+        window.aiosFilterMemories = aiosFilterMemories;
+
+        window.closeWorkspaceConsole = closeWorkspaceConsole;
+        window.startSystemPet = function startSystemPet() {
+            // 通过 deep link 调起 AGI-Bot 宿主开启悬浮窗
+            const url = 'magi://pet/start';
+            try {
+                // 优先 location（WebView 可拦截）
+                window.location.href = url;
+            } catch (e) {}
+            // 同时尝试 iframe / a 标签，兼容部分 WebView
+            try {
+                const a = document.createElement('a');
+                a.href = url;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => a.remove(), 500);
+            } catch (e2) {}
+            if (typeof showToast === 'function') {
+                showToast('正在请求系统桌宠…若无反应请打开 AGI-Bot App');
+            } else {
+                alert('正在请求系统桌宠。\n若无反应，请打开 AGI-Bot 宿主 App 并点「开启系统桌宠」。\n需授予悬浮窗权限，且 8087 服务已运行。');
+            }
+        };
+        window.stopSystemPet = function stopSystemPet() {
+            try { window.location.href = 'magi://pet/stop'; } catch (e) {}
+            try {
+                const a = document.createElement('a');
+                a.href = 'magi://pet/stop';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => a.remove(), 500);
+            } catch (e2) {}
+            if (typeof showToast === 'function') showToast('已发送关闭桌宠请求');
+        };
 
         window.copyCodeBlock = function(btn) {
             const container = btn.closest('.code-block-container');
@@ -3062,6 +4137,12 @@
         let tunnelPollInterval = null;
 
         async function checkTunnelStatus() {
+            // The capability check completes after DOMContentLoaded. Do not
+            // probe a desktop-only tunnel route from the standalone app.
+            if (window.microAgiCapabilitiesReady) {
+                await window.microAgiCapabilitiesReady;
+            }
+            if (window.microAgiEmbedded !== false) return;
             try {
                 const response = await fetch("/api/system/tunnel");
                 const data = await response.json();
@@ -3073,7 +4154,26 @@
                 
                 if (data.status === "active") {
                     checkbox.checked = true;
-                    statusText.innerHTML = `✅ 已开启: <a href="${data.url}" target="_blank" style="color: var(--primary); font-weight: bold; text-decoration: underline;">${data.url}</a>`;
+                    let tunnelUrl = null;
+                    try {
+                        const parsed = new URL(data.url);
+                        if (parsed.protocol === 'https:' && parsed.hostname.endsWith('.lhr.life') &&
+                            !parsed.username && !parsed.password) {
+                            tunnelUrl = parsed;
+                        }
+                    } catch (_) {
+                        // A malformed tunnel address must never become HTML or a link.
+                    }
+                    statusText.textContent = tunnelUrl ? '✅ 已开启: ' : '✅ 已开启，地址暂不可用';
+                    if (tunnelUrl) {
+                        const link = document.createElement('a');
+                        link.href = tunnelUrl.href;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.style.cssText = 'color: var(--primary); font-weight: bold; text-decoration: underline;';
+                        link.textContent = tunnelUrl.href;
+                        statusText.appendChild(link);
+                    }
                     
                     if (tunnelPollInterval) {
                         clearInterval(tunnelPollInterval);
@@ -3161,8 +4261,8 @@
                 renderExtensions(allExtensionsData);
             } catch (err) {
                 console.error("加载扩展/技能失败:", err);
-                skillsContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--error); font-size: 0.75rem;">加载失败: ${err.message}</div>`;
-                mcpContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--error); font-size: 0.75rem;">加载失败: ${err.message}</div>`;
+                skillsContainer.textContent = `加载失败: ${err.message}`;
+                mcpContainer.textContent = `加载失败: ${err.message}`;
             }
         }
 
@@ -3186,7 +4286,7 @@
             }
             
             if (mcpList.length === 0) {
-                mcpContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">无符合条件的 MCP 端点</div>`;
+                mcpContainer.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.75rem;">尚未接入 MCP 端点</div>`;
             } else {
                 mcpList.forEach(ext => {
                     mcpContainer.appendChild(createExtensionCard(ext));
@@ -3200,78 +4300,24 @@
             card.setAttribute('data-id', ext.id);
             card.setAttribute('data-type', ext.type);
             
-            const isChecked = ext.enabled ? 'checked' : '';
-            const statusText = (ext.type === 'mcp') 
-                ? (ext.enabled ? '● 在线' : '○ 已停用')
-                : (ext.enabled ? '● 已激活' : '○ 已停用');
-            const statusClass = ext.enabled ? (ext.type === 'mcp' ? 'online' : 'active') : 'disabled';
+            const safeType = ['skill', 'plugin', 'mcp'].includes(ext.type) ? ext.type : 'plugin';
             
             card.innerHTML = `
                 <div class="extension-header">
                     <div class="extension-title-block">
-                        <span class="extension-icon">${ext.icon || '🧩'}</span>
+                        <span class="extension-icon">${escapeHtml(ext.icon || '🧩')}</span>
                         <div class="extension-details">
-                            <div class="extension-name">${ext.name}</div>
-                            <div class="extension-type-badge ${ext.type}">${ext.type === 'skill' ? '技能库' : ext.type === 'mcp' ? 'MCP 端点' : '内置插件'}</div>
+                            <div class="extension-name">${escapeHtml(ext.name)}</div>
+                            <div class="extension-type-badge ${safeType}">${safeType === 'skill' ? '技能库' : safeType === 'mcp' ? 'MCP 端点' : '本地脚本'}</div>
                         </div>
                     </div>
                     <div class="extension-status-block">
-                        <span class="status-indicator ${statusClass}">${statusText}</span>
-                        <label class="switch-container">
-                            <input type="checkbox" ${isChecked} onchange="toggleExtensionState('${ext.id}', this.checked)">
-                            <span class="switch-slider"></span>
-                        </label>
+                        <span class="status-indicator active">● 已检测</span>
                     </div>
                 </div>
-                <div class="extension-desc">${ext.description}</div>
+                <div class="extension-desc">${escapeHtml(ext.description)}</div>
             `;
             return card;
-        }
-
-        async function toggleExtensionState(id, enabled) {
-            try {
-                const response = await fetch('/api/system/extensions/toggle', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, enabled })
-                });
-                const res = await response.json();
-                if (res.status === 'success') {
-                    showToast(`${enabled ? '开启' : '停用'} 成功 ⚙️`);
-                    
-                    // Update UI status indicator
-                    const card = document.querySelector(`.extension-card[data-id="${id}"]`);
-                    if (card) {
-                        const indicator = card.querySelector('.status-indicator');
-                        const extType = card.getAttribute('data-type');
-                        if (indicator) {
-                            indicator.className = `status-indicator ${enabled ? (extType === 'mcp' ? 'online' : 'active') : 'disabled'}`;
-                            indicator.textContent = extType === 'mcp' 
-                                ? (enabled ? '● 在线' : '○ 已停用')
-                                : (enabled ? '● 已激活' : '○ 已停用');
-                        }
-                    }
-                    
-                    // Update local list
-                    const index = allExtensionsData.findIndex(e => e.id === id);
-                    if (index !== -1) {
-                        allExtensionsData[index].enabled = enabled;
-                        allExtensionsData[index].status = enabled ? (allExtensionsData[index].type === 'mcp' ? 'online' : 'active') : 'disabled';
-                    }
-                    
-                    if (showingSkillsChips) {
-                        renderSkillsChips();
-                    }
-                } else {
-                    showToast(`操作失败: ${res.error}`);
-                    const checkbox = document.querySelector(`.extension-card[data-id="${id}"] input[type="checkbox"]`);
-                    if (checkbox) checkbox.checked = !enabled;
-                }
-            } catch (err) {
-                showToast(`请求错误: ${err.message}`);
-                const checkbox = document.querySelector(`.extension-card[data-id="${id}"] input[type="checkbox"]`);
-                if (checkbox) checkbox.checked = !enabled;
-            }
         }
 
         function filterConsoleExtensions() {
@@ -3314,7 +4360,7 @@
             
             const activeExts = allExtensionsData.filter(e => e.enabled);
             if (activeExts.length === 0) {
-                container.innerHTML = `<div style="font-size: 0.72rem; color: var(--text-muted); padding: 4px 8px; width: 100%; text-align: center;">没有已激活的扩展技能。请在控制台激活。</div>`;
+                container.innerHTML = `<div style="font-size: 0.72rem; color: var(--text-muted); padding: 4px 8px; width: 100%; text-align: center;">没有检测到本地技能。</div>`;
                 return;
             }
             
@@ -3337,10 +4383,9 @@
                     chip.style.borderColor = 'rgba(139, 92, 246, 0.4)';
                 }
                 
-                chip.innerHTML = `${ext.icon || '🧠'} ${ext.name}`;
+                chip.textContent = `${ext.icon || '🧠'} ${ext.name}`;
                 chip.onclick = () => {
-                    const commandPrefix = `/${ext.id} `;
-                    chatInput.value = commandPrefix;
+                    chatInput.value = `请使用${ext.name}帮我：`;
                     chatInput.focus();
                 };
                 container.appendChild(chip);
@@ -3369,7 +4414,6 @@
 
         // Attach them to window
         window.loadExtensions = loadExtensions;
-        window.toggleExtensionState = toggleExtensionState;
         window.filterConsoleExtensions = filterConsoleExtensions;
         window.toggleSkillsChips = toggleSkillsChips;
         window.renderSkillsChips = renderSkillsChips;
@@ -3415,16 +4459,21 @@
                             item.style.background = 'transparent';
                         });
                         
-                        item.innerHTML = `
-                            <div style="display: flex; align-items: center; gap: 8px; color: var(--text-color);">
-                                <span>${ext.icon || '🧩'}</span>
-                                <span style="font-weight: 600;">/${ext.id}</span>
-                                <span style="color: var(--text-muted); font-size: 0.72rem;">${ext.name}</span>
-                            </div>
-                            <div style="font-size: 0.65rem; color: var(--text-muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                ${ext.description}
-                            </div>
-                        `;
+                        const summary = document.createElement('div');
+                        summary.style.cssText = 'display: flex; align-items: center; gap: 8px; color: var(--text-color);';
+                        const icon = document.createElement('span');
+                        icon.textContent = ext.icon || '🧩';
+                        const command = document.createElement('span');
+                        command.style.fontWeight = '600';
+                        command.textContent = `/${ext.id}`;
+                        const name = document.createElement('span');
+                        name.style.cssText = 'color: var(--text-muted); font-size: 0.72rem;';
+                        name.textContent = ext.name;
+                        summary.append(icon, command, name);
+                        const description = document.createElement('div');
+                        description.style.cssText = 'font-size: 0.65rem; color: var(--text-muted); max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+                        description.textContent = ext.description || '';
+                        item.append(summary, description);
                         
                         item.onclick = () => {
                             chatInput.value = `/${ext.id} `;
@@ -3447,4 +4496,460 @@
             if (dropdown && !chatInput.contains(e.target) && !dropdown.contains(e.target)) {
                 dropdown.style.display = 'none';
             }
+        });
+
+        // --- Google Login & API Configuration Helpers ---
+        // --- Google Login & API Configuration Helpers ---
+        async function updateGoogleLoginStatus() {
+            try {
+                const response = await fetch("/api/system/google_status");
+                if (!response.ok) return;
+                const data = await response.json();
+                if (window.microAgiEmbedded) {
+                    const urlInput = document.getElementById('custom-ai-url');
+                    const modelInput = document.getElementById('custom-ai-model');
+                    if (urlInput && document.activeElement !== urlInput) urlInput.value = data.ai_url || '';
+                    if (modelInput && document.activeElement !== modelInput) modelInput.value = data.ai_model || '';
+                    setModelProvider(data.ai_url ? 'compatible' : 'gemini');
+                    const editor = document.getElementById('model-config-editor');
+                    if (editor) editor.open = !(data.gemini_key_configured || data.ai_key_configured);
+                    markEmbeddedGoogleAuth(data.gemini_key_configured ||
+                        (data.ai_url && data.ai_key_configured));
+                    return;
+                }
+                
+                const statusEl = document.getElementById("google-login-status");
+                const authBtn = document.getElementById("google-settings-auth-btn");
+                const authZone = document.getElementById("google-settings-auth-input-zone");
+                const keyInput = document.getElementById("custom-gemini-key");
+                
+                if (data.gemini_key) {
+                    keyInput.value = data.gemini_key;
+                }
+                
+                const isAgy = data.llm_backend === "agy";
+                
+                if (data.status === "connected") {
+                    if (statusEl) {
+                        statusEl.innerHTML = isAgy 
+                            ? '<span style="color: #34a853; font-weight: bold;">🟢 已绑定 Antigravity (agy)</span>'
+                            : '<span style="color: #34a853; font-weight: bold;">已关联 Google</span>';
+                    }
+                    if (authBtn) {
+                        authBtn.innerHTML = isAgy ? "🔄 重新登录绑定 (Antigravity CLI)" : "🔓 断开 Google 账号关联";
+                        authBtn.style.background = isAgy ? "rgba(255,255,255,0.05)" : "rgba(239, 68, 68, 0.1)";
+                        authBtn.style.color = isAgy ? "#fff" : "var(--error)";
+                        authBtn.style.borderColor = isAgy ? "rgba(255,255,255,0.1)" : "rgba(239, 68, 68, 0.3)";
+                        authBtn.onclick = isAgy ? triggerGoogleLogin : triggerGoogleLogout;
+                    }
+                } else {
+                    if (statusEl) {
+                        statusEl.innerHTML = isAgy 
+                            ? '<span style="color: #ef4444; font-weight: bold;">🔴 未关联 (Antigravity CLI)</span>'
+                            : '<span style="color: #ef4444; font-weight: bold;">未关联</span>';
+                    }
+                    if (authBtn) {
+                        authBtn.innerHTML = `
+                            <span aria-hidden="true">G</span>
+                            关联 Google 账号登录 (免 Key)
+                        `;
+                        authBtn.style.background = "rgba(66, 133, 244, 0.15)";
+                        authBtn.style.color = "#8ab4f8";
+                        authBtn.style.borderColor = "rgba(66, 133, 244, 0.4)";
+                        authBtn.onclick = triggerGoogleLogin;
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching google status:", err);
+            }
+        }
+
+        async function triggerGoogleLogin() {
+            if (window.microAgiEmbedded !== false) return;
+            const btn = document.getElementById('google-settings-auth-btn');
+            const zone = document.getElementById('google-settings-auth-input-zone');
+            if (!btn || !zone) return;
+            
+            try {
+                const checkRes = await fetch("/api/system/google_status");
+                const checkData = await checkRes.json();
+                if (checkData.llm_backend !== "agy") {
+                    window.open("/google_login", "_blank", "width=500,height=600,location=no,menubar=no,status=no");
+                    return;
+                }
+            } catch(e) {}
+            
+            btn.innerText = "正在拉起授权...";
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('/api/system/auth/init', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.ok && data.url) {
+                    btn.innerText = "请在浏览器中登录";
+                    zone.style.display = "flex";
+                    if (window.AndroidBridge && typeof window.AndroidBridge.openExternalBrowser === 'function') {
+                        window.AndroidBridge.openExternalBrowser(data.url);
+                    } else {
+                        window.location.href = data.url;
+                    }
+                } else {
+                    btn.innerText = "获取失败，重试";
+                    btn.disabled = false;
+                    alert("错误: " + (data.message || "无法拉起 OAuth 链接"));
+                }
+            } catch (e) {
+                btn.innerText = "连接失败，重试";
+                btn.disabled = false;
+                alert("连接服务失败: " + e.message);
+            }
+        }
+
+        async function submitGoogleAuthCode() {
+            const input = document.getElementById('google-settings-auth-code');
+            const zone = document.getElementById('google-settings-auth-input-zone');
+            const btn = document.getElementById('google-settings-auth-btn');
+            if (!input || !zone || !btn) return;
+            
+            const code = input.value.trim();
+            if (!code) {
+                alert("请输入您获取到的验证 Code！");
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/system/auth/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await response.json();
+                
+                if (data.ok) {
+                    alert("🔑 恭喜，Google 账号在手机本地的 Antigravity CLI (agy) 下已成功授权绑定！");
+                    zone.style.display = "none";
+                    input.value = "";
+                    btn.disabled = false;
+                    updateGoogleLoginStatus();
+                } else {
+                    alert("绑定失败: " + data.message);
+                }
+            } catch (e) {
+                alert("提交 Code 失败: " + e.message);
+            }
+        }
+
+        async function triggerGoogleLogout() {
+            if (!confirm("确定要断开 Google 账号的关联吗？")) return;
+            try {
+                const response = await fetch("/api/system/google_logout", { method: "POST" });
+                if (response.ok) {
+                    updateGoogleLoginStatus();
+                }
+            } catch (err) {
+                console.error("Error logging out:", err);
+            }
+        }
+
+        async function saveCustomKeys() {
+            const keyInput = document.getElementById("custom-gemini-key");
+            const geminiKey = keyInput.value.trim();
+            const statusEl = document.getElementById("google-login-status");
+            try {
+                const response = await fetch("/api/system/save_gemini_key", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ gemini_key: geminiKey })
+                });
+                if (response.ok) {
+                    keyInput.value = '';
+                    updateGoogleLoginStatus();
+                } else if (statusEl) {
+                    statusEl.textContent = 'API Key 保存失败，请重试';
+                }
+            } catch (err) {
+                console.error("Error saving keys:", err);
+                if (statusEl) statusEl.textContent = 'API Key 保存失败，请重试';
+            }
+        }
+
+        function clearCustomKey() {
+            if (!confirm('确定清除已保存的 Gemini API Key 吗？')) return;
+            document.getElementById('custom-gemini-key').value = '';
+            saveCustomKeys();
+        }
+
+        async function saveCompatibleModel() {
+            const urlInput = document.getElementById('custom-ai-url');
+            const modelInput = document.getElementById('custom-ai-model');
+            const keyInput = document.getElementById('custom-ai-key');
+            const statusEl = document.getElementById('google-login-status');
+            let aiUrl = urlInput.value.trim().replace(/\/$/, '');
+            if (aiUrl.endsWith('/v1')) aiUrl += '/chat/completions';
+            try {
+                const parsed = new URL(aiUrl);
+                if (parsed.protocol !== 'https:' || !parsed.pathname.endsWith('/chat/completions') ||
+                    !modelInput.value.trim() || !keyInput.value.trim()) {
+                    statusEl.textContent = '请填写 HTTPS 聊天地址、模型名称和 Key';
+                    return;
+                }
+                const response = await fetch('/api/system/save_gemini_key', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({gemini_key: '', ai_url: aiUrl,
+                        ai_model: modelInput.value.trim(), ai_key: keyInput.value.trim()})
+                });
+                if (!response.ok) {
+                    statusEl.textContent = '模型配置保存失败，请检查地址和输入';
+                    return;
+                }
+                keyInput.value = '';
+                document.getElementById('custom-gemini-key').value = '';
+                urlInput.value = aiUrl;
+                await updateGoogleLoginStatus();
+            } catch (_) {
+                statusEl.textContent = '模型配置保存失败，请检查地址和连接';
+            }
+        }
+
+        function triggerTerminalToggle() {
+            if (window.microAgiEmbedded !== false) return;
+            const agiApp = window.MicroAGI || window.MicroAgi || window.microAgi || window.TermuxApp;
+            if (agiApp && typeof agiApp.toggleTerminal === 'function') {
+                agiApp.toggleTerminal();
+            } else {
+                alert("提示：当前运行环境不是 Micro-AGI 安卓 App，无法调用底层终端窗口。若是在普通浏览器中，请在 Termux 终端内直接使用 'tmux attach' 命令访问控制台。");
+            }
+        }
+
+        window.openTerminalTab = function() {
+            toggleQuickTerminal();
+        };
+
+        window.toggleQuickTerminal = function() {
+            if (window.microAgiEmbedded !== false) return;
+            const term = document.getElementById('quickTerminal');
+            const chatArea = document.getElementById('chatArea');
+            const suggestions = document.getElementById('suggestionsContainer');
+            const outputEl = document.getElementById('quick-terminal-output');
+            
+            if (term) {
+                const isHidden = window.getComputedStyle(term).display === 'none';
+                if (isHidden) {
+                    term.style.setProperty('display', 'flex', 'important');
+                    if (chatArea) chatArea.style.setProperty('display', 'none', 'important');
+                    if (suggestions) suggestions.style.setProperty('display', 'none', 'important');
+                    
+                    term.style.maxHeight = '80vh';
+                    if (outputEl) outputEl.style.maxHeight = '70vh';
+                    
+                    const inp = document.getElementById('quick-terminal-input');
+                    if (inp) {
+                        inp.focus();
+                        setTimeout(() => {
+                            term.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        }, 100);
+                    }
+                } else {
+                    term.style.setProperty('display', 'none', 'important');
+                    if (chatArea) chatArea.style.setProperty('display', 'flex', 'important');
+                    if (suggestions) suggestions.style.setProperty('display', 'flex', 'important');
+                    
+                    term.style.maxHeight = '250px';
+                    if (outputEl) outputEl.style.maxHeight = '160px';
+                }
+            }
+        };
+
+        window.clearQuickTerminal = function() {
+            const out = document.getElementById('quick-terminal-output');
+            if (out) {
+                out.innerHTML = "Welcome to Micro-AGI Web Terminal.<br>Type your shell command below and press Enter or click Execute.";
+            }
+        };
+
+        window.executeQuickTerminalCommand = async function() {
+            if (window.microAgiEmbedded !== false) return;
+            const inputEl = document.getElementById('quick-terminal-input');
+            const outputEl = document.getElementById('quick-terminal-output');
+            if (!inputEl || !outputEl) return;
+            
+            const cmd = inputEl.value.trim();
+            if (!cmd) return;
+            
+            // Append command line with styled prompt
+            const cmdLine = document.createElement('div');
+            cmdLine.style.marginTop = '8px';
+            const prompt = document.createElement('span');
+            prompt.style.cssText = 'color: #a6e22e; font-weight: bold; font-family: monospace;';
+            prompt.textContent = '$';
+            const commandText = document.createElement('span');
+            commandText.style.cssText = 'color: #f8f8f2; font-family: monospace;';
+            commandText.textContent = ` ${cmd}`;
+            cmdLine.append(prompt, commandText);
+            outputEl.appendChild(cmdLine);
+            outputEl.scrollTop = outputEl.scrollHeight;
+            
+            inputEl.value = '';
+            
+            try {
+                const response = await fetch('/api/system/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cmd: cmd })
+                });
+                const data = await response.json();
+                
+                if (data.stdout) {
+                    const pre = document.createElement('pre');
+                    pre.style.margin = '0';
+                    pre.style.whiteSpace = 'pre-wrap';
+                    pre.style.color = '#38bdf8';
+                    pre.style.fontFamily = 'monospace';
+                    pre.textContent = data.stdout;
+                    outputEl.appendChild(pre);
+                }
+                if (data.stderr) {
+                    const pre = document.createElement('pre');
+                    pre.style.margin = '0';
+                    pre.style.whiteSpace = 'pre-wrap';
+                    pre.style.color = '#ef4444';
+                    pre.style.fontFamily = 'monospace';
+                    pre.textContent = data.stderr;
+                    outputEl.appendChild(pre);
+                }
+                if (!data.stdout && !data.stderr) {
+                    const div = document.createElement('div');
+                    div.style.color = '#a1a1aa';
+                    div.style.fontSize = '0.7rem';
+                    div.style.fontFamily = 'monospace';
+                    div.textContent = `(命令执行完毕，返回值: ${data.exit_code})`;
+                    outputEl.appendChild(div);
+                }
+                outputEl.scrollTop = outputEl.scrollHeight;
+            } catch (err) {
+                const div = document.createElement('div');
+                div.style.color = '#ef4444';
+                div.style.fontFamily = 'monospace';
+                div.textContent = `请求失败: ${err.message}`;
+                outputEl.appendChild(div);
+                outputEl.scrollTop = outputEl.scrollHeight;
+            }
+        };
+
+        async function executeTerminalCommand() {
+            if (window.microAgiEmbedded !== false) return;
+            const inputEl = document.getElementById('terminal-input');
+            const outputEl = document.getElementById('terminal-output');
+            if (!inputEl || !outputEl) return;
+            
+            const cmd = inputEl.value.trim();
+            if (!cmd) return;
+            
+            // Append command line with styled prompt
+            const cmdLine = document.createElement('div');
+            cmdLine.style.marginTop = '8px';
+            const prompt = document.createElement('span');
+            prompt.style.cssText = 'color: #a6e22e; font-weight: bold;';
+            prompt.textContent = '$';
+            const commandText = document.createElement('span');
+            commandText.style.cssText = 'color: #f8f8f2; font-family: monospace;';
+            commandText.textContent = ` ${cmd}`;
+            cmdLine.append(prompt, commandText);
+            outputEl.appendChild(cmdLine);
+            outputEl.scrollTop = outputEl.scrollHeight;
+            
+            inputEl.value = '';
+            
+            try {
+                const response = await fetch('/api/system/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cmd: cmd })
+                });
+                const data = await response.json();
+                
+                if (data.stdout) {
+                    const pre = document.createElement('pre');
+                    pre.style.margin = '0';
+                    pre.style.whiteSpace = 'pre-wrap';
+                    pre.style.color = '#38bdf8';
+                    pre.style.fontFamily = 'monospace';
+                    pre.textContent = data.stdout;
+                    outputEl.appendChild(pre);
+                }
+                if (data.stderr) {
+                    const pre = document.createElement('pre');
+                    pre.style.margin = '0';
+                    pre.style.whiteSpace = 'pre-wrap';
+                    pre.style.color = '#ef4444';
+                    pre.style.fontFamily = 'monospace';
+                    pre.textContent = data.stderr;
+                    outputEl.appendChild(pre);
+                }
+                if (!data.stdout && !data.stderr) {
+                    const div = document.createElement('div');
+                    div.style.color = '#a1a1aa';
+                    div.style.fontSize = '0.7rem';
+                    div.style.fontFamily = 'monospace';
+                    div.textContent = `(命令执行完毕，返回值: ${data.exit_code})`;
+                    outputEl.appendChild(div);
+                }
+                outputEl.scrollTop = outputEl.scrollHeight;
+            } catch (err) {
+                const div = document.createElement('div');
+                div.style.color = '#ef4444';
+                div.style.fontFamily = 'monospace';
+                div.textContent = `请求失败: ${err.message}`;
+                outputEl.appendChild(div);
+                outputEl.scrollTop = outputEl.scrollHeight;
+            }
+        }
+
+        function clearTerminalScreen() {
+            const outputEl = document.getElementById('terminal-output');
+            if (outputEl) {
+                outputEl.innerHTML = "Welcome to Micro-AGI Web Terminal.<br>Type your shell command below and press Enter or click Execute.";
+            }
+        }
+
+        function sendCtrlC() {
+            const outputEl = document.getElementById('terminal-output');
+            if (outputEl) {
+                const div = document.createElement('div');
+                div.style.color = '#f87171';
+                div.style.fontFamily = 'monospace';
+                div.textContent = '^C (已发送中断信号)';
+                outputEl.appendChild(div);
+                outputEl.scrollTop = outputEl.scrollHeight;
+            }
+        }
+
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const inputEl = document.getElementById('terminal-input');
+            if (inputEl) {
+                inputEl.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        executeTerminalCommand();
+                    }
+                });
+            }
+            
+            const quickInputEl = document.getElementById('quick-terminal-input');
+            if (quickInputEl) {
+                quickInputEl.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        executeQuickTerminalCommand();
+                    }
+                });
+            }
+            
+            // Add Ctrl + ` keyboard shortcut to toggle terminal
+            window.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && (e.key === '`' || e.key === '~')) {
+                    e.preventDefault();
+                    openTerminalTab();
+                }
+            });
         });

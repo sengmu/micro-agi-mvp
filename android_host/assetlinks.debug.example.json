@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "cloud.relayhub.microagi.debug",
+      "sha256_cert_fingerprints": [
+        "34:59:91:39:84:6B:37:0D:AE:42:85:17:C0:2C:14:FC:CC:7B:1B:1E:47:5A:FD:E2:79:50:8A:60:0A:F8:0A:DC"
+      ]
+    }
+  }
+]

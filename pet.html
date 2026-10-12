@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <link rel="icon" href="data:," />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Hiyori Pet</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; background: transparent !important;
+      touch-action: none;
+    }
+    #wrap {
+      width: 100%; height: 100%;
+      position: relative;
+      background: transparent;
+      overflow: hidden;
+    }
+    #canvas { width: 100%; height: 100%; display: block; }
+    #err {
+      position: absolute; inset: 8px; color: #fca5a5;
+      font: 12px/1.4 sans-serif; display: none; z-index: 3;
+      background: rgba(0,0,0,.5); border-radius: 10px; padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="canvas"></canvas>
+    <div id="err"></div>
+  </div>
+
+  <script src="/pixi.min.js?v=5"></script>
+  <script src="/pixi-unsafe-eval.min.js?v=5.3.12"></script>
+  <script src="/live2dcubismcore.min.js?v=4"></script>
+  <script src="/pixi-live2d-display.min.js?v=4"></script>
+  <script>
+    const errBox = document.getElementById('err');
+    let app, model;
+
+    async function init() {
+      if (typeof PIXI === 'undefined' || !PIXI.live2d) {
+        errBox.style.display = 'block';
+        errBox.textContent = 'Live2D 库未加载，请重新打开应用。';
+        return;
+      }
+      try {
+        window.PIXI = PIXI;
+        const canvas = document.getElementById('canvas');
+        const wrap = document.getElementById('wrap');
+        app = new PIXI.Application({
+          view: canvas,
+          transparent: true,
+          autoStart: true,
+          antialias: true,
+          resizeTo: wrap,
+          // The overlay is small, so rendering at native pixel density is
+          // affordable and avoids the blurry 1x bitmap on high-DPI phones.
+          resolution: Math.min(window.devicePixelRatio || 1, 3),
+          backgroundAlpha: 0
+        });
+        model = await PIXI.live2d.Live2DModel.from('/Hiyori/Hiyori.model3.json');
+        model.originalWidth = model.width;
+        model.originalHeight = model.height;
+        app.stage.addChild(model);
+        model.buttonMode = true;
+        model.interactive = true;
+        model.on('pointertap', () => {
+          try { model.motion(Math.random() > 0.5 ? 'Tap' : 'Tap@Body'); } catch (e) {}
+        });
+        layout();
+        window.addEventListener('resize', layout);
+      } catch (e) {
+        console.error('Live2D pet initialization failed:', e);
+        errBox.style.display = 'block';
+        errBox.textContent = '角色加载失败。请打开主界面查看详细原因。';
+      }
+    }
+
+    function layout() {
+      if (!model || !app) return;
+      try { if (typeof app.resize === 'function') app.resize(); } catch (e) {}
+      const nw = model.originalWidth || model.width || 400;
+      const nh = model.originalHeight || model.height || 400;
+      const h = app.screen.height || window.innerHeight;
+      const w = app.screen.width || window.innerWidth;
+      // Keep the entire character inside the transparent overlay. The old
+      // 1.35x height scale cut off the skirt and legs on narrow phones.
+      const scale = Math.min(w / nw, h / nh) * 0.95;
+      model.scale.set(scale);
+      model.x = (w - nw * scale) / 2;
+      model.y = (h - nh * scale) / 2;
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>

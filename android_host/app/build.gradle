@@ -1,0 +1,112 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.chaquo.python'
+}
+
+android {
+    namespace 'com.sg.magi'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "cloud.relayhub.microagi"
+        minSdk 26
+        targetSdk 34
+        versionCode 3
+        versionName "1.1.1-pet"
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            // Keep developer builds separate from users' existing release/legacy app.
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+    }
+}
+
+// Only these reviewed files may enter the APK. Never package .env, databases,
+// logs, MCP credentials, or unrelated repository subprojects.
+def embeddedFiles = [
+    'app.py', 'db.py', 'ai_os.py', 'solana_watch.py',
+    'index.html', 'style.css', 'script.js', 'solana-wallet.js',
+    'pet.html', 'manifest.json', 'sw.js', 'nami_render.png',
+    'companion-room-night.png',
+    'pixi.min.js', 'pixi-unsafe-eval.min.js', 'pixi-unsafe-eval.LICENSE',
+    'live2dcubismcore.min.js', 'pixi-live2d-display.min.js',
+    'fonts/outfit.css', 'fonts/QGYvz_MVcBeNP4NJuktqQ4E.woff2',
+    'fonts/QGYvz_MVcBeNP4NJtEtq.woff2',
+    'Hiyori/Hiyori.moc3', 'Hiyori/Hiyori.cdi3.json',
+    'Hiyori/Hiyori.2048/texture_00.png',
+    'Hiyori/Hiyori.physics3.json', 'Hiyori/Hiyori.model3.json',
+    'Hiyori/motion/hiyori_m01.motion3.json',
+    'Hiyori/motion/hiyori_m02.motion3.json',
+    'Hiyori/motion/hiyori_m03.motion3.json',
+    'Hiyori/motion/hiyori_m04.motion3.json',
+    'Hiyori/motion/hiyori_m05.motion3.json',
+    'Hiyori/motion/hiyori_m06.motion3.json',
+    'Hiyori/motion/hiyori_m07.motion3.json',
+    'Hiyori/motion/hiyori_m08.motion3.json',
+]
+def embeddedSourceRoot = rootProject.projectDir.parentFile
+// Do not accidentally ship the temporary PIXI CSP exception in a release APK.
+// Replace PIXI with a tested CSP-safe renderer and remove the exception first.
+def checkReleaseCsp = tasks.register('checkReleaseCsp') {
+    doLast {
+        def backend = new File(embeddedSourceRoot, 'app.py').getText('UTF-8')
+        if (backend.contains("'unsafe-eval'")) {
+            throw new GradleException('Release blocked: remove the embedded unsafe-eval CSP exception')
+        }
+    }
+}
+tasks.matching { it.name == 'preReleaseBuild' }.configureEach {
+    dependsOn(checkReleaseCsp)
+}
+def prepareEmbeddedPython = tasks.register('prepareEmbeddedPython', Sync) {
+    from(embeddedSourceRoot) {
+        embeddedFiles.each { include it }
+    }
+    into(layout.buildDirectory.dir('generated/embeddedPython'))
+    doFirst {
+        embeddedFiles.each { relative ->
+            if (!new File(embeddedSourceRoot, relative).isFile()) {
+                throw new GradleException("Missing embedded backend file: ${relative}")
+            }
+        }
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = '3.13'
+    }
+    sourceSets {
+        getByName('main') {
+            srcDir(layout.buildDirectory.dir('generated/embeddedPython'))
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith('merge') && it.name.endsWith('PythonSources') }
+    .configureEach { dependsOn(prepareEmbeddedPython) }
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'com.solanamobile:mobile-wallet-adapter-clientlib-ktx:2.0.3'
+    implementation 'io.github.funkatronics:multimult:0.2.3'
+}
